@@ -1,5 +1,13 @@
 # JoyconSteering
 
+> ⚠️ **Vibe-coded.** This was hacked together end-to-end with an AI coding
+> assistant rather than carefully designed up front. The goal was narrow and
+> specific: get a single Nintendo Switch left Joy-Con working as a steering
+> wheel for **Forza Horizon 5 and 6** on PC — including the Xbox Game Pass /
+> Microsoft Store builds that don't accept third-party controller drivers
+> through Steam Input. It works for that, and the architecture is reasonable,
+> but treat it accordingly.
+
 Use a single left Nintendo Switch Joy-Con as a **steering wheel** for PC racing
 games — particularly ones that don't natively support Joy-Cons, like the
 Xbox Game Pass / Microsoft Store version of **Forza Horizon 5/6**.
@@ -22,6 +30,33 @@ angle as a wheel axis, which is what a real wheel does.
 Working build with full test coverage of the non-hardware code (parser,
 sensor fusion, steering math, output routing). The hardware path (Bluetooth
 HID → vJoy driver) is in place but needs a real Joy-Con to validate.
+
+## Quick install (prebuilt)
+
+1. Grab the latest **`JoyconSteering.exe`** from the
+   [Releases page](https://github.com/xfxf/joycon-steering/releases). It's a
+   self-contained Windows x64 build — no .NET install required.
+2. Install **vJoy** from <https://sourceforge.net/projects/vjoystick/>.
+   Open **Configure vJoy**, ensure **Device 1** has axes **X**, **Y**, **Rz**
+   enabled and **≥ 16 buttons**, click **Apply**.
+3. Pair the **left Joy-Con** via Windows Bluetooth: Settings → Bluetooth &
+   devices → Add device. On the Joy-Con, hold the small sync button between
+   SR and SL until the four LEDs race; wait for "Joy-Con (L)" to appear and
+   pair it.
+4. Double-click `JoyconSteering.exe`. Look for the blue **JS** icon in the
+   system tray; double-click it to open the live diagnostics window.
+5. In **Settings → Steering**, pick a mode (Wheel for gyro integration, Tilt
+   for gravity-anchored Mario Kart style), set your full-lock tilt angle,
+   click **Save & Apply**, then **Recenter** from the tray menu while
+   holding the controller straight-ahead.
+6. In your game's controller config, bind **vJoy X axis** to steering and
+   **Y / Rz** to throttle / brake.
+
+If something's wrong on first launch, the tray icon's tooltip and the
+Diagnostics window will tell you which check is failing. You can also run
+`JoyconSteering.exe --diagnose` from a command prompt for a one-shot
+self-check (vJoy DLL, driver state, device config, Joy-Con presence,
+INI parse).
 
 ## Requirements
 
@@ -170,4 +205,4 @@ See **[CLAUDE.md](CLAUDE.md)** for architecture, contribution discipline
 
 ## Licence
 
-Personal use. Not for distribution.
+GPL

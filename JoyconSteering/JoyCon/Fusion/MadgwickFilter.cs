@@ -102,6 +102,23 @@ public sealed class MadgwickFilter
         }
     }
 
+    /// <summary>
+    /// Gravity direction in body frame, derived from the orientation quaternion.
+    /// Filtered (gyro + accel fusion) so it's smoother than the raw accelerometer
+    /// during motion — linear acceleration is suppressed.
+    /// Magnitude is approximately 1 (unit vector pointing "down" in body coords).
+    /// </summary>
+    public (double X, double Y, double Z) GravityInBody()
+    {
+        // Components of the world Z axis ((0,0,1) gravity-up) rotated into the body
+        // frame by the current orientation quaternion. Standard Madgwick formulation.
+        return (
+            2 * (_q1 * _q3 - _q0 * _q2),
+            2 * (_q0 * _q1 + _q2 * _q3),
+            _q0 * _q0 - _q1 * _q1 - _q2 * _q2 + _q3 * _q3
+        );
+    }
+
     /// <summary>Return (roll, pitch, yaw) in degrees, ZYX intrinsic convention.</summary>
     public (double Roll, double Pitch, double Yaw) GetEulerDegrees()
     {

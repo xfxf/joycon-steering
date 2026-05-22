@@ -68,7 +68,7 @@ public sealed class SteeringMath
     }
 }
 
-public enum SelectedAxis { Roll, Pitch, Yaw, Wheel }
+public enum SelectedAxis { Roll, Pitch, Yaw, Wheel, Tilt }
 
 public static class SteeringAxisSelector
 {
@@ -79,6 +79,7 @@ public static class SteeringAxisSelector
             JoyconSteering.Config.SteeringAxis.Pitch => SelectedAxis.Pitch,
             JoyconSteering.Config.SteeringAxis.Yaw => SelectedAxis.Yaw,
             JoyconSteering.Config.SteeringAxis.Wheel => SelectedAxis.Wheel,
+            JoyconSteering.Config.SteeringAxis.Tilt => SelectedAxis.Tilt,
             // Auto: body-frame Z rotation. Tilt-invariant, unbounded (no ±180° wrap),
             // works when the controller is mounted at an angle in a wheel grip.
             _ => SelectedAxis.Wheel,

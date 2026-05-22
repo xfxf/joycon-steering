@@ -135,7 +135,7 @@ internal sealed class TrayAppContext : ApplicationContext
         else if (!s.Running)
             text = "JoyconSteering — stopped";
         else
-            text = $"JoyconSteering  angle {s.AngleDeg:F1}°  steer {s.Steer:+0.00;-0.00;0.00}  bat {s.Battery}";
+            text = $"JoyconSteering  angle {s.AngleDeg:F0}°  steer {s.Steer:+0.00;-0.00;0.00}  bat {s.BatteryPercent}%";
 
         // NotifyIcon tooltip is limited to 127 chars.
         _icon.Text = Truncate(text, 63);

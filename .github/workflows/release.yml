@@ -1,0 +1,99 @@
+name: Release
+
+# Manual trigger only: run from the Actions tab (or `gh workflow run release.yml`)
+# with an explicit version. Builds a self-contained single-file exe, tags the
+# commit, and publishes a GitHub Release with the exe + App.ini attached.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.0.0) — must start with v'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release?'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish ${{ inputs.version }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Validate version
+        shell: bash
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+            echo "::error::Version must look like v1.2.3 or v1.2.3-rc1; got '${{ inputs.version }}'"
+            exit 1
+          fi
+
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse to overwrite existing tag
+        shell: bash
+        run: |
+          if git rev-parse "refs/tags/${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag ${{ inputs.version }} already exists. Pick a new version."
+            exit 1
+          fi
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore JoyconSteering.sln
+
+      - name: Run tests (must pass before release)
+        run: dotnet test JoyconSteering.sln --configuration Release --verbosity normal
+
+      - name: Publish self-contained single-file exe
+        run: |
+          dotnet publish JoyconSteering/JoyconSteering.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=embedded
+
+      - name: Stage release artefacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=JoyconSteering/bin/Release/net8.0-windows/win-x64/publish
+          mkdir -p release-staging
+          cp "$out/JoyconSteering.exe" release-staging/
+          cp "$out/App.ini"            release-staging/
+          ls -lh release-staging/
+
+      - name: Tag commit
+        shell: bash
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ inputs.version }}" -m "Release ${{ inputs.version }}"
+          git push origin "${{ inputs.version }}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.version }}
+          name: JoyconSteering ${{ inputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ inputs.prerelease }}
+          fail_on_unmatched_files: true
+          files: |
+            release-staging/JoyconSteering.exe
+            release-staging/App.ini

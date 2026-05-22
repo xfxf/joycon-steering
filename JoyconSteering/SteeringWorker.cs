@@ -13,10 +13,13 @@ public sealed record WorkerStatus(
     double AngleDeg,
     double Steer,
     double StickY,
-    int Battery,
+    int BatteryPercent,
+    bool Charging,
+    bool GyroSaturated,
+    int DroppedPacketsTotal,
     string? ErrorMessage)
 {
-    public static readonly WorkerStatus Stopped = new(false, 0, 0, 0, 0, null);
+    public static readonly WorkerStatus Stopped = new(false, 0, 0, 0, 0, false, false, 0, null);
 }
 
 /// <summary>
@@ -26,8 +29,6 @@ public sealed record WorkerStatus(
 /// </summary>
 public sealed class SteeringWorker : IDisposable
 {
-    private const double JoyConSampleDtSeconds = 0.005;
-
     private readonly object _gate = new();
     private CancellationTokenSource? _cts;
     private Task? _task;
@@ -159,11 +160,26 @@ public sealed class SteeringWorker : IDisposable
         catch (AggregateException) { return false; }
     }
 
+    /// <summary>
+    /// True when any gyro axis is close enough to the int16 rail that we know
+    /// the chip's ±2000 dps full-scale was hit. Threshold a hair below the rail
+    /// (32760 out of 32767) to leave room for noise.
+    /// </summary>
+    private static bool GyroSaturated(ImuSample s)
+    {
+        // We have dps values (already scaled by 0.06103). 32760 LSB * 0.06103 ≈ 1999.4 dps.
+        const double satDps = 1995.0;
+        return Math.Abs(s.GxDps) >= satDps
+            || Math.Abs(s.GyDps) >= satDps
+            || Math.Abs(s.GzDps) >= satDps;
+    }
+
     private void Loop(AppConfig config, JoyConDevice jc, VJoyOutput vjoy, CancellationToken token)
     {
         var axis = SteeringAxisSelector.Resolve(config.Axis, config.Side);
         var fusion = new MadgwickFilter(config.MadgwickBeta);
         var wheel = new WheelAxisIntegrator();
+        var tilt = new GravityTiltAxis();
         var biasCal = new GyroBiasCalibrator(); // 200 samples = 1 s at 200 Hz
         var steering = new SteeringMath(new SteeringSettings(
             config.RangeDegrees, config.DeadzoneDegrees, config.SmoothingMs, config.Invert));
@@ -173,10 +189,24 @@ public sealed class SteeringWorker : IDisposable
         bool wasCalibrated = false;
         Logger.Info($"Steering axis = {axis}. Calibrating gyro — hold still for ~1 s…");
 
+        // Drop-detection via Joy-Con Timer byte (increments by 3 per packet at 5 ms/tick).
+        int? lastTimer = null;
+        int dropsSinceHeartbeat = 0;
+        int dropsTotal = 0;
+        // Continuous bias refinement (only while controller is detected as stationary).
+        const double biasRefinementThresholdDps = 1.5; // tighter than ZUPT to be conservative
+
         var sw = Stopwatch.StartNew();
         long lastMs = 0;
+        long lastPacketMs = 0;
         long lastHeartbeatMs = 0;
         int framesSinceHeartbeat = 0;
+        bool saturatedSinceHeartbeat = false;
+        double packetDtMs = 15.0;
+        // Auto-recenter state
+        double idleSecondsAccum = 0;
+        bool autoRecenteredThisIdle = false;
+        const double autoRecenterMotionThresholdDps = 5.0;
 
         while (!token.IsCancellationRequested)
         {
@@ -194,15 +224,63 @@ public sealed class SteeringWorker : IDisposable
                 Logger.Info("Gyro recalibration requested — hold still for ~1 s…");
             }
 
+            // The Joy-Con's gyro samples at a fixed 200 Hz (5 ms / sample), regardless of
+            // how BT delivers them. Bluetooth often batches packets — Read() can return
+            // multiple buffered reports in quick succession (dt≈0), then block for the next
+            // batch. Using wall-clock dt would under-attribute motion to the burst samples;
+            // we ALWAYS credit each IMU sample with exactly 5 ms.
+            const double sampleDtSeconds = 0.005;
+            long packetNowMs = sw.ElapsedMilliseconds;
+            packetDtMs = lastPacketMs == 0 ? 15.0 : packetNowMs - lastPacketMs;
+            lastPacketMs = packetNowMs;
+
+            // Saturation: int16 gyro at ±32760+ LSB ≈ at the ±2000 dps rail. Means fast
+            // motion was clipped and the integrated angle is under-counting reality.
+            bool saturatedThisTick =
+                  GyroSaturated(state.Sample0) || GyroSaturated(state.Sample1) || GyroSaturated(state.Sample2);
+            if (saturatedThisTick) saturatedSinceHeartbeat = true;
+
+            // Detect dropped packets via Joy-Con's Timer byte.
+            // Each packet covers 3 IMU samples = 3 ticks of 5 ms each. So delta == 3 = no drop;
+            // delta == 6 = 1 packet dropped, etc. (mod 256 for the byte rollover.)
+            if (lastTimer is int prev)
+            {
+                int delta = (state.Timer - prev) & 0xFF;
+                if (delta > 3 && delta < 200) // ignore huge gaps (probably reconnect)
+                {
+                    int dropped = (delta - 3) / 3;
+                    dropsSinceHeartbeat += dropped;
+                    dropsTotal += dropped;
+                }
+            }
+            lastTimer = state.Timer;
+
             var s0 = biasCal.Apply(state.Sample0);
             var s1 = biasCal.Apply(state.Sample1);
             var s2 = biasCal.Apply(state.Sample2);
-            fusion.Update(s0, JoyConSampleDtSeconds);
-            fusion.Update(s1, JoyConSampleDtSeconds);
-            fusion.Update(s2, JoyConSampleDtSeconds);
-            wheel.Apply(s0, JoyConSampleDtSeconds);
-            wheel.Apply(s1, JoyConSampleDtSeconds);
-            wheel.Apply(s2, JoyConSampleDtSeconds);
+
+            // Continuous bias refinement: when the controller is held still, slowly
+            // pull the gyro bias toward the current reading. Catches thermal drift
+            // without requiring a full recalibration.
+            double peakMag = Math.Max(Math.Max(
+                Math.Sqrt(s0.GxDps * s0.GxDps + s0.GyDps * s0.GyDps + s0.GzDps * s0.GzDps),
+                Math.Sqrt(s1.GxDps * s1.GxDps + s1.GyDps * s1.GyDps + s1.GzDps * s1.GzDps)),
+                Math.Sqrt(s2.GxDps * s2.GxDps + s2.GyDps * s2.GyDps + s2.GzDps * s2.GzDps));
+            if (peakMag < biasRefinementThresholdDps)
+            {
+                biasCal.UpdateRunning(state.Sample0);
+                biasCal.UpdateRunning(state.Sample1);
+                biasCal.UpdateRunning(state.Sample2);
+            }
+
+            fusion.Update(s0, sampleDtSeconds);
+            fusion.Update(s1, sampleDtSeconds);
+            fusion.Update(s2, sampleDtSeconds);
+            wheel.Apply(s0, sampleDtSeconds);
+            wheel.Apply(s1, sampleDtSeconds);
+            wheel.Apply(s2, sampleDtSeconds);
+            var (gx, gy, _) = fusion.GravityInBody();
+            tilt.Update(gx, gy);
             if (!wasCalibrated && biasCal.IsCalibrated)
             {
                 Logger.Info($"Gyro bias calibrated: x={biasCal.BiasXDps:F3} y={biasCal.BiasYDps:F3} z={biasCal.BiasZDps:F3} dps");
@@ -210,7 +288,7 @@ public sealed class SteeringWorker : IDisposable
             }
 
             var (roll, pitch, yaw) = fusion.GetEulerDegrees();
-            double angle = AngleSource.Pick(axis, roll, pitch, yaw, wheel.AngleDegrees);
+            double angle = AngleSource.Pick(axis, roll, pitch, yaw, wheel.AngleDegrees, tilt.AngleDegrees);
 
             bool recenterEdge = recenterButton != LeftJoyConButton.None
                                 && edge.Update(state.Buttons.HasFlag(recenterButton));
@@ -220,7 +298,41 @@ public sealed class SteeringWorker : IDisposable
                 externalRecenter = _recenterRequested;
                 _recenterRequested = false;
             }
-            if (recenterEdge || externalRecenter) steering.Recenter(angle);
+            if (recenterEdge || externalRecenter)
+            {
+                steering.Recenter(angle);
+                tilt.SetNeutral();
+                wheel.Reset();
+                idleSecondsAccum = 0;
+                autoRecenteredThisIdle = true;
+            }
+
+            // Auto-recenter when controller has been still for the configured idle period.
+            // Counteracts integrated drift after a few hard corners: lift off, let it settle,
+            // and we silently snap the centre to wherever it ends up.
+            if (config.AutoRecenterIdleSeconds > 0 && biasCal.IsCalibrated)
+            {
+                double peakAbsGyro = Math.Max(Math.Max(
+                    Math.Abs(s0.GxDps) + Math.Abs(s0.GyDps) + Math.Abs(s0.GzDps),
+                    Math.Abs(s1.GxDps) + Math.Abs(s1.GyDps) + Math.Abs(s1.GzDps)),
+                    Math.Abs(s2.GxDps) + Math.Abs(s2.GyDps) + Math.Abs(s2.GzDps));
+
+                if (peakAbsGyro < autoRecenterMotionThresholdDps)
+                {
+                    idleSecondsAccum += 3 * sampleDtSeconds; // 3 samples per packet
+                    if (!autoRecenteredThisIdle && idleSecondsAccum >= config.AutoRecenterIdleSeconds)
+                    {
+                        steering.Recenter(angle);
+                        autoRecenteredThisIdle = true;
+                        Logger.Info($"Auto-recenter after {idleSecondsAccum:F1}s idle (angle was {angle:F1}°)");
+                    }
+                }
+                else
+                {
+                    idleSecondsAccum = 0;
+                    autoRecenteredThisIdle = false;
+                }
+            }
 
             long now = sw.ElapsedMilliseconds;
             double dtMs = lastMs == 0 ? 16 : now - lastMs;
@@ -229,16 +341,23 @@ public sealed class SteeringWorker : IDisposable
             double steer = steering.Compute(angle, dtMs);
             mapper.Apply(steer, state, vjoy);
 
+            int batPct = JoyConBattery.Percent(state.Battery);
+            bool charging = JoyConBattery.IsCharging(state.Battery);
+
             lock (_gate)
             {
-                _status = new WorkerStatus(true, angle, steer, state.StickY, state.Battery, null);
+                _status = new WorkerStatus(true, angle, steer, state.StickY, batPct, charging, saturatedThisTick, dropsTotal, null);
             }
 
             framesSinceHeartbeat++;
             if (now - lastHeartbeatMs >= 100) // 10 Hz heartbeat
             {
-                Logger.Info($"hb angle={angle:F2}° steer={steer:+0.000;-0.000;0.000} stickY={state.StickY:+0.00;-0.00;0.00} bat={state.Battery} frames+={framesSinceHeartbeat}");
+                string satTag = saturatedSinceHeartbeat ? " SAT!" : "";
+                string dropTag = dropsSinceHeartbeat > 0 ? $" drops+={dropsSinceHeartbeat}" : "";
+                Logger.Info($"hb angle={angle:F2}° steer={steer:+0.000;-0.000;0.000} stickY={state.StickY:+0.00;-0.00;0.00} bat={batPct}%{(charging ? "+chg" : "")} frames+={framesSinceHeartbeat} dt={packetDtMs:F1}ms{satTag}{dropTag}");
                 framesSinceHeartbeat = 0;
+                saturatedSinceHeartbeat = false;
+                dropsSinceHeartbeat = 0;
                 lastHeartbeatMs = now;
             }
         }

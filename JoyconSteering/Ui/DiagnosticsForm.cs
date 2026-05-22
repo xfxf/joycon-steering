@@ -104,10 +104,11 @@ internal sealed class DiagnosticsForm : Form
         _statusLabel.ForeColor = s.ErrorMessage is not null ? Color.Firebrick
                               : s.Running ? Color.ForestGreen : Color.DimGray;
         _angleLabel.Text = $"{s.AngleDeg,7:F1}°";
-        _steerLabel.Text = $"{s.Steer,+6:F2}";
+        _steerLabel.Text = $"{s.Steer,+6:F2}" + (s.GyroSaturated ? "  ⚠ SAT" : "");
+        _steerLabel.ForeColor = s.GyroSaturated ? Color.OrangeRed : Color.Black;
         _steerBar.Value = (int)Math.Round((Math.Clamp(s.Steer, -1, 1) + 1) * 500);
         _stickYLabel.Text = $"{s.StickY,+5:F2}";
-        _batteryLabel.Text = s.Battery.ToString();
+        _batteryLabel.Text = $"{s.BatteryPercent}%{(s.Charging ? " (charging)" : "")}";
         _errorLabel.Text = s.ErrorMessage ?? "";
     }
 

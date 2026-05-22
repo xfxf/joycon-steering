@@ -16,7 +16,9 @@ internal sealed class SettingsForm : Form
 
     private readonly ComboBox _side = new();
     private readonly NumericUpDown _vjoyId = NewNum(1, 16, 0);
-    private readonly ComboBox _axis = new();
+    private readonly RadioButton _modeWheel = new() { Text = "Wheel — gyro integration", AutoSize = true };
+    private readonly RadioButton _modeTilt = new() { Text = "Tilt — gravity-anchored (Mario Kart style)", AutoSize = true };
+    private readonly ComboBox _axisAdvanced = new();
     private readonly NumericUpDown _range = NewNum(30, 720, 1);
     private readonly NumericUpDown _deadzone = NewNum(0, 20, 1);
     private readonly NumericUpDown _smoothing = NewNum(0, 200, 0);
@@ -24,7 +26,8 @@ internal sealed class SettingsForm : Form
     private readonly ComboBox _tbMode = new();
     private readonly NumericUpDown _stickDead = NewNum(0, 0.9m, 2);
     private readonly ComboBox _recenter = new();
-    private readonly NumericUpDown _autoRecenter = NewNum(0, 30, 1);
+    private readonly CheckBox _autoRecenterEnabled = new() { Text = "Auto-recenter when held still" };
+    private readonly NumericUpDown _autoRecenter = NewNum(0.5m, 30, 1);
     private readonly NumericUpDown _beta = NewNum(0.01m, 0.5m, 3);
 
     private static readonly string[] ButtonNames =
@@ -45,11 +48,22 @@ internal sealed class SettingsForm : Form
 
         // Populate combo box options
         _side.Items.AddRange(new object[] { "left", "right" });
-        _axis.Items.AddRange(new object[] { "auto", "wheel", "roll", "pitch", "yaw" });
+        _axisAdvanced.Items.AddRange(new object[] { "(use mode above)", "roll", "pitch", "yaw" });
         _tbMode.Items.AddRange(new object[] { "stick", "buttons", "none" });
         _recenter.Items.AddRange(ButtonNames.Cast<object>().Append("none").ToArray());
-        foreach (var combo in new[] { _side, _axis, _tbMode, _recenter })
+        foreach (var combo in new[] { _side, _axisAdvanced, _tbMode, _recenter })
             combo.DropDownStyle = ComboBoxStyle.DropDownList;
+        _modeWheel.CheckedChanged += (s, e) => { if (_modeWheel.Checked) _axisAdvanced.SelectedIndex = 0; };
+        _modeTilt.CheckedChanged += (s, e) => { if (_modeTilt.Checked) _axisAdvanced.SelectedIndex = 0; };
+        _axisAdvanced.SelectedIndexChanged += (s, e) =>
+        {
+            if (_axisAdvanced.SelectedIndex > 0)
+            {
+                // Switching to an advanced axis clears the mode radios.
+                _modeWheel.Checked = false;
+                _modeTilt.Checked = false;
+            }
+        };
 
         // Per-button inputs
         foreach (var name in ButtonNames)
@@ -97,13 +111,45 @@ internal sealed class SettingsForm : Form
         var grid = NewFormGrid();
         AddPair(grid, "Joy-Con side:", _side);
         AddPair(grid, "vJoy device:", _vjoyId);
-        AddPair(grid, "Steering axis:", _axis);
+
+        // Mode radio group — primary steering-source selector.
+        var modePanel = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.TopDown,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            WrapContents = false,
+        };
+        _modeWheel.Margin = new Padding(0, 2, 0, 2);
+        _modeTilt.Margin = new Padding(0, 2, 0, 2);
+        modePanel.Controls.Add(_modeWheel);
+        modePanel.Controls.Add(_modeTilt);
+        AddPair(grid, "Steering mode:", modePanel);
+        AddPair(grid, "  Advanced axis:", _axisAdvanced);
+
         AddPair(grid, "Full-lock tilt (deg/side):", _range);
         AddPair(grid, "Deadzone (degrees):", _deadzone);
         AddPair(grid, "Smoothing (ms):", _smoothing);
         AddPair(grid, "", _invert);
         AddPair(grid, "Recenter button:", _recenter);
-        AddPair(grid, "Auto-recenter idle (sec):", _autoRecenter);
+        AddPair(grid, "", _autoRecenterEnabled);
+        AddPair(grid, "  …after idle for (sec):", _autoRecenter);
+        _autoRecenterEnabled.CheckedChanged += (s, e) => _autoRecenter.Enabled = _autoRecenterEnabled.Checked;
+        var hint = new Label
+        {
+            Text = "Auto-recenter snaps the wheel centre to its current orientation whenever\n" +
+                   "the controller has been still for the given duration. Helps mask the small\n" +
+                   "drift that accumulates during fast motion (BT can drop a few samples).\n" +
+                   "Disable this if you sometimes drive holding a deliberate steady offset.",
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            ForeColor = Color.Gray,
+            Padding = new Padding(0, 8, 0, 0),
+        };
+        grid.RowCount++;
+        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        grid.Controls.Add(hint, 0, grid.RowCount - 1);
+        grid.SetColumnSpan(hint, 2);
         tab.Controls.Add(grid);
         return tab;
     }
@@ -208,7 +254,33 @@ internal sealed class SettingsForm : Form
     {
         _side.SelectedItem = cfg.Side.ToString().ToLowerInvariant();
         _vjoyId.Value = cfg.VJoyDeviceId;
-        _axis.SelectedItem = cfg.Axis.ToString().ToLowerInvariant();
+
+        switch (cfg.Axis)
+        {
+            case SteeringAxis.Tilt:
+                _modeTilt.Checked = true;
+                _axisAdvanced.SelectedIndex = 0;
+                break;
+            case SteeringAxis.Roll:
+                _modeWheel.Checked = false;
+                _modeTilt.Checked = false;
+                _axisAdvanced.SelectedItem = "roll";
+                break;
+            case SteeringAxis.Pitch:
+                _modeWheel.Checked = false;
+                _modeTilt.Checked = false;
+                _axisAdvanced.SelectedItem = "pitch";
+                break;
+            case SteeringAxis.Yaw:
+                _modeWheel.Checked = false;
+                _modeTilt.Checked = false;
+                _axisAdvanced.SelectedItem = "yaw";
+                break;
+            default: // Auto and Wheel both → Wheel mode
+                _modeWheel.Checked = true;
+                _axisAdvanced.SelectedIndex = 0;
+                break;
+        }
         _range.Value = (decimal)cfg.RangeDegrees;
         _deadzone.Value = (decimal)cfg.DeadzoneDegrees;
         _smoothing.Value = (decimal)cfg.SmoothingMs;
@@ -216,10 +288,22 @@ internal sealed class SettingsForm : Form
         _tbMode.SelectedItem = cfg.ThrottleBrake.ToString().ToLowerInvariant();
         _stickDead.Value = (decimal)cfg.StickDeadzone;
         _recenter.SelectedItem = cfg.RecenterButton;
-        _autoRecenter.Value = (decimal)cfg.AutoRecenterIdleSeconds;
+        _autoRecenterEnabled.Checked = cfg.AutoRecenterIdleSeconds > 0;
+        _autoRecenter.Enabled = _autoRecenterEnabled.Checked;
+        _autoRecenter.Value = cfg.AutoRecenterIdleSeconds > 0 ? (decimal)cfg.AutoRecenterIdleSeconds : 1.5m;
         _beta.Value = (decimal)cfg.MadgwickBeta;
         foreach (var name in ButtonNames)
             _buttonInputs[name].Value = cfg.ButtonMap.TryGetValue(name, out var v) ? v : 0;
+    }
+
+    private string ResolveSelectedAxis()
+    {
+        // Advanced override wins if set.
+        if (_axisAdvanced.SelectedIndex > 0 && _axisAdvanced.SelectedItem is string adv)
+            return adv;
+        if (_modeTilt.Checked) return "tilt";
+        if (_modeWheel.Checked) return "wheel";
+        return "auto";
     }
 
     private void OnSave()
@@ -230,7 +314,7 @@ internal sealed class SettingsForm : Form
             {
                 [("device", "joycon_side")] = _side.SelectedItem?.ToString() ?? "left",
                 [("device", "vjoy_device_id")] = ((int)_vjoyId.Value).ToString(CultureInfo.InvariantCulture),
-                [("steering", "axis")] = _axis.SelectedItem?.ToString() ?? "auto",
+                [("steering", "axis")] = ResolveSelectedAxis(),
                 [("steering", "range_degrees")] = _range.Value.ToString(CultureInfo.InvariantCulture),
                 [("steering", "deadzone_degrees")] = _deadzone.Value.ToString(CultureInfo.InvariantCulture),
                 [("steering", "smoothing_ms")] = _smoothing.Value.ToString(CultureInfo.InvariantCulture),
@@ -238,7 +322,8 @@ internal sealed class SettingsForm : Form
                 [("throttle_brake", "mode")] = _tbMode.SelectedItem?.ToString() ?? "stick",
                 [("throttle_brake", "stick_deadzone")] = _stickDead.Value.ToString(CultureInfo.InvariantCulture),
                 [("recenter", "button")] = _recenter.SelectedItem?.ToString() ?? "stick",
-                [("recenter", "auto_recenter_idle_seconds")] = _autoRecenter.Value.ToString(CultureInfo.InvariantCulture),
+                [("recenter", "auto_recenter_idle_seconds")] =
+                    (_autoRecenterEnabled.Checked ? _autoRecenter.Value : 0m).ToString(CultureInfo.InvariantCulture),
                 [("fusion", "madgwick_beta")] = _beta.Value.ToString(CultureInfo.InvariantCulture),
             };
             foreach (var name in ButtonNames)

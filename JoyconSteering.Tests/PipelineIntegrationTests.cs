@@ -50,7 +50,7 @@ public class PipelineIntegrationTests
         ImuSample? sample = null)
     {
         var s = sample ?? new ImuSample(0, 0, 1, 0, 0, 0); // gravity straight down
-        return new JoyConState(buttons, stickX, stickY, 8, s, s, s);
+        return new JoyConState(buttons, stickX, stickY, 8, 0, s, s, s);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class PipelineIntegrationTests
             wheelInt.Apply(levelState.Sample0, Dt);
         }
         var (r0, p0, y0) = fusion.GetEulerDegrees();
-        var angle0 = AngleSource.Pick(axis, r0, p0, y0, wheelInt.AngleDegrees);
+        var angle0 = AngleSource.Pick(axis, r0, p0, y0, wheelInt.AngleDegrees, 0);
         if (edge.Update(true)) steering.Recenter(angle0);
         var out0 = steering.Compute(angle0, 16);
         mapper.Apply(out0, levelState, sink);
@@ -91,7 +91,7 @@ public class PipelineIntegrationTests
             wheelInt.Apply(rotState.Sample0, Dt);
         }
         var (r, p, y) = fusion.GetEulerDegrees();
-        var angle = AngleSource.Pick(axis, r, p, y, wheelInt.AngleDegrees);
+        var angle = AngleSource.Pick(axis, r, p, y, wheelInt.AngleDegrees, 0);
         var output = steering.Compute(angle, 16);
         mapper.Apply(output, rotState, sink);
 

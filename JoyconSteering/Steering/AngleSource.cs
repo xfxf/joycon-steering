@@ -3,11 +3,12 @@ namespace JoyconSteering.Steering;
 /// <summary>Pure helper: pick the configured Euler component from a (roll, pitch, yaw) triple.</summary>
 public static class AngleSource
 {
-    public static double Pick(SelectedAxis axis, double roll, double pitch, double yaw, double wheel) => axis switch
+    public static double Pick(SelectedAxis axis, double roll, double pitch, double yaw, double wheel, double tilt) => axis switch
     {
         SelectedAxis.Pitch => pitch,
         SelectedAxis.Yaw => yaw,
         SelectedAxis.Wheel => wheel,
+        SelectedAxis.Tilt => tilt,
         _ => roll,
     };
 }

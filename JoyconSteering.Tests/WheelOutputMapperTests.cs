@@ -21,7 +21,7 @@ internal sealed class FakeWheelOutput : IWheelOutput
 public class WheelOutputMapperTests
 {
     private static JoyConState State(LeftJoyConButton buttons = LeftJoyConButton.None, double stickX = 0, double stickY = 0)
-        => new(buttons, stickX, stickY, Battery: 8, default, default, default);
+        => new(buttons, stickX, stickY, Battery: 8, Timer: 0, default, default, default);
 
     private static AppConfig CfgWithButtons(ThrottleBrakeMode tb = ThrottleBrakeMode.Stick, double stickDead = 0.15)
     {

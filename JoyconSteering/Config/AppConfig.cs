@@ -1,6 +1,6 @@
 namespace JoyconSteering.Config;
 
-public enum SteeringAxis { Auto, Roll, Pitch, Yaw, Wheel }
+public enum SteeringAxis { Auto, Roll, Pitch, Yaw, Wheel, Tilt }
 public enum ThrottleBrakeMode { Stick, Buttons, None }
 public enum JoyConSide { Left, Right }
 
@@ -38,6 +38,7 @@ public sealed record AppConfig
             "pitch" => SteeringAxis.Pitch,
             "yaw" => SteeringAxis.Yaw,
             "wheel" => SteeringAxis.Wheel,
+            "tilt" => SteeringAxis.Tilt,
             _ => SteeringAxis.Auto,
         };
 
@@ -58,7 +59,7 @@ public sealed record AppConfig
             Side = side,
             VJoyDeviceId = (uint)ini.GetInt("device", "vjoy_device_id", 1),
             Axis = axis,
-            RangeDegrees = ini.GetDouble("steering", "range_degrees", 180),
+            RangeDegrees = ini.GetDouble("steering", "range_degrees", 350),
             DeadzoneDegrees = ini.GetDouble("steering", "deadzone_degrees", 1.5),
             SmoothingMs = ini.GetDouble("steering", "smoothing_ms", 10),
             Invert = ini.GetBool("steering", "invert", true),

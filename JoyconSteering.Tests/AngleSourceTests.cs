@@ -6,13 +6,14 @@ namespace JoyconSteering.Tests;
 public class AngleSourceTests
 {
     [Theory]
-    [InlineData(SelectedAxis.Roll, 10, 20, 30, 40, 10)]
-    [InlineData(SelectedAxis.Pitch, 10, 20, 30, 40, 20)]
-    [InlineData(SelectedAxis.Yaw, 10, 20, 30, 40, 30)]
-    [InlineData(SelectedAxis.Wheel, 10, 20, 30, 40, 40)]
-    public void Pick_ReturnsConfiguredAxis(SelectedAxis axis, double r, double p, double y, double w, double expected)
+    [InlineData(SelectedAxis.Roll, 10, 20, 30, 40, 50, 10)]
+    [InlineData(SelectedAxis.Pitch, 10, 20, 30, 40, 50, 20)]
+    [InlineData(SelectedAxis.Yaw, 10, 20, 30, 40, 50, 30)]
+    [InlineData(SelectedAxis.Wheel, 10, 20, 30, 40, 50, 40)]
+    [InlineData(SelectedAxis.Tilt, 10, 20, 30, 40, 50, 50)]
+    public void Pick_ReturnsConfiguredAxis(SelectedAxis axis, double r, double p, double y, double w, double t, double expected)
     {
-        Assert.Equal(expected, AngleSource.Pick(axis, r, p, y, w));
+        Assert.Equal(expected, AngleSource.Pick(axis, r, p, y, w, t));
     }
 }
 

@@ -35,6 +35,23 @@ public sealed class GyroBiasCalibrator
     public double BiasYDps => _biasY;
     public double BiasZDps => _biasZ;
 
+    /// <summary>
+    /// Continuous bias refinement, called per-sample only when the controller is detected
+    /// as stationary (gyro magnitude under a tight threshold). Slowly nudges the bias
+    /// toward the current reading to track thermal drift mid-session.
+    ///
+    /// alpha is a very small EWMA coefficient (per-sample). At 200 Hz with alpha=0.0005,
+    /// the time constant is ~10 seconds — enough to follow slow temperature changes,
+    /// short enough to ignore single noisy samples.
+    /// </summary>
+    public void UpdateRunning(ImuSample stationarySample, double alpha = 0.0005)
+    {
+        if (!IsCalibrated) return;
+        _biasX = (1 - alpha) * _biasX + alpha * stationarySample.GxDps;
+        _biasY = (1 - alpha) * _biasY + alpha * stationarySample.GyDps;
+        _biasZ = (1 - alpha) * _biasZ + alpha * stationarySample.GzDps;
+    }
+
     /// <summary>Throw away the current calibration and start collecting again.</summary>
     public void Restart()
     {

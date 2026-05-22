@@ -21,7 +21,7 @@ public class AppConfigTests
         Assert.Equal(JoyConSide.Left, cfg.Side);
         Assert.Equal(1u, cfg.VJoyDeviceId);
         Assert.Equal(SteeringAxis.Auto, cfg.Axis);
-        Assert.Equal(180.0, cfg.RangeDegrees);
+        Assert.Equal(350.0, cfg.RangeDegrees);
         Assert.Equal(1.5, cfg.DeadzoneDegrees);
         Assert.Equal(10.0, cfg.SmoothingMs);
         Assert.True(cfg.Invert);

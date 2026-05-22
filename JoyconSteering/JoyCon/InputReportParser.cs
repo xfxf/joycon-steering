@@ -83,6 +83,7 @@ internal static class InputReportParser
             ParseLeftButtons(buffer),
             sx, sy,
             ParseBattery(buffer),
+            buffer[1],
             ParseImu(buffer, 0),
             ParseImu(buffer, 1),
             ParseImu(buffer, 2));
