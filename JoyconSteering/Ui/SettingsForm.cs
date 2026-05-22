@@ -23,7 +23,7 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown _deadzone = NewNum(0, 20, 1);
     private readonly NumericUpDown _smoothing = NewNum(0, 200, 0);
     private readonly CheckBox _invert = new() { Text = "Invert steering direction" };
-    private readonly ComboBox _tbMode = new();
+    private readonly ComboBox _tbMode = new() { Width = 250, DropDownWidth = 320 };
     private readonly ComboBox _stickAxis = new();
     private readonly NumericUpDown _stickDead = NewNum(0, 0.9m, 2);
     private readonly ComboBox _recenter = new();
@@ -261,13 +261,13 @@ internal sealed class SettingsForm : Form
 
         var help = new Label
         {
-            Text = "stick         — steering Joy-Con's analog stick Y (up = throttle, down = brake)\n" +
-                   "buttons       — steering Joy-Con's L (throttle) / ZL (brake), digital\n" +
-                   "pedal_buttons — pedal Joy-Con's assignable buttons (digital)\n" +
-                   "pedal_tilt    — pedal Joy-Con's tilt angle (analog, gravity-anchored)\n" +
-                   "none          — disable; bind throttle/brake to keyboard\n\n" +
-                   "Pedal modes require the SECOND Joy-Con to be paired. App still works\n" +
-                   "without it — status will say \"Pedal Joy-Con disconnected\" until paired.",
+            Text = "Modes ending in \"pedal\" (Pedal Joy-Con's stick / buttons / tilt) use the\n" +
+                   "OTHER Joy-Con — the side opposite the one you picked for steering. The\n" +
+                   "second Joy-Con must be paired via Windows Bluetooth, but the app still\n" +
+                   "works without it: those modes just yield zero throttle/brake until it's\n" +
+                   "connected. Stick deadzone and axis only apply to the two stick modes;\n" +
+                   "button pickers only to \"Pedal Joy-Con's buttons\"; tilt fields only to\n" +
+                   "\"Pedal Joy-Con's tilt\". Irrelevant fields are greyed for the current mode.",
             Dock = DockStyle.Fill, AutoSize = false,
             ForeColor = Color.Gray, Padding = new Padding(0, 16, 0, 0),
         };
