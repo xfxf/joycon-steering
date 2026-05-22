@@ -31,6 +31,20 @@ Working build with full test coverage of the non-hardware code (parser,
 sensor fusion, steering math, output routing). The hardware path (Bluetooth
 HID → vJoy driver) is in place but needs a real Joy-Con to validate.
 
+## Screenshots
+
+The live diagnostics window (auto-opens on launch; double-click the tray
+icon to re-show after minimising):
+
+![Diagnostics window](docs/screenshots/diagnostics.png)
+
+The Settings dialog — pick **Wheel** (gyro-integrated, position-based) or
+**Tilt** (gravity-anchored, "Mario Kart" style, drift-free), set your
+full-lock tilt angle, button map, etc. Save & Apply hot-reloads the
+running pipeline:
+
+![Settings dialog](docs/screenshots/settings.png)
+
 ## Quick install (prebuilt)
 
 1. Grab the latest **`JoyconSteering.exe`** from the
