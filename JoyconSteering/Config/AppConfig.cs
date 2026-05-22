@@ -36,7 +36,7 @@ public sealed record AppConfig
     // ── Pedal Joy-Con: tilt mode ────────────────────────────────────────────
     public SteeringAxis PedalTiltAxis { get; init; } = SteeringAxis.Auto;
     public double PedalTiltRangeDegrees    { get; init; } = 45;
-    public double PedalTiltDeadzoneDegrees { get; init; } = 3;
+    public double PedalTiltDeadzoneDegrees { get; init; } = 8;
     public bool   PedalTiltInvert          { get; init; }
     public string PedalRecenterButton      { get; init; } = "home";
 
@@ -104,7 +104,7 @@ public sealed record AppConfig
             PedalBrakeButton    = ini.GetString("pedal_buttons", "brake",    "r").ToLowerInvariant(),
             PedalTiltAxis = pedalAxis,
             PedalTiltRangeDegrees    = ini.GetDouble("pedal_tilt", "range_degrees", 45),
-            PedalTiltDeadzoneDegrees = ini.GetDouble("pedal_tilt", "deadzone_degrees", 3),
+            PedalTiltDeadzoneDegrees = ini.GetDouble("pedal_tilt", "deadzone_degrees", 8),
             PedalTiltInvert          = ini.GetBool("pedal_tilt", "invert", false),
             PedalRecenterButton      = ini.GetString("pedal_tilt", "recenter_button", "home").ToLowerInvariant(),
             ButtonMap = buttonMap,

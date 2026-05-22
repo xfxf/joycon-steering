@@ -55,7 +55,7 @@ public class PedalConfigTests
         var cfg = AppConfig.Load(path);
         Assert.Equal(SteeringAxis.Auto, cfg.PedalTiltAxis);
         Assert.Equal(45.0, cfg.PedalTiltRangeDegrees);
-        Assert.Equal(3.0,  cfg.PedalTiltDeadzoneDegrees);
+        Assert.Equal(8.0,  cfg.PedalTiltDeadzoneDegrees);
         Assert.False(cfg.PedalTiltInvert);
         Assert.Equal("home", cfg.PedalRecenterButton);
     }

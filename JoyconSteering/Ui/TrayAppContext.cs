@@ -51,7 +51,7 @@ internal sealed class TrayAppContext : ApplicationContext
 
     private DiagnosticsForm CreateMainForm()
     {
-        var form = new DiagnosticsForm(_worker);
+        var form = new DiagnosticsForm(_worker, _config);
         form.SettingsRequested += ShowSettings;
         form.QuitRequested += Quit;
         return form;
@@ -88,6 +88,7 @@ internal sealed class TrayAppContext : ApplicationContext
             Logger.Info($"Reloaded config: side={_config.Side} vjoy={_config.VJoyDeviceId} range={_config.RangeDegrees}");
             _worker.Stop();
             _worker.Start(_config);
+            _mainForm.UpdateConfig(_config);
         }
         catch (Exception ex)
         {

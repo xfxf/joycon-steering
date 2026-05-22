@@ -294,7 +294,8 @@ internal sealed class SettingsForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             Padding = new Padding(12),
-            AutoSize = false,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
         };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -379,7 +380,7 @@ internal sealed class SettingsForm : Form
         _deadzone.Value = (decimal)cfg.DeadzoneDegrees;
         _smoothing.Value = (decimal)cfg.SmoothingMs;
         _invert.Checked = cfg.Invert;
-        _tbMode.SelectedItem = cfg.ThrottleBrake.ToString().ToLowerInvariant();
+        _tbMode.SelectedItem = ModeToIniString(cfg.ThrottleBrake);
         _stickDead.Value = (decimal)cfg.StickDeadzone;
         _recenter.SelectedItem = cfg.RecenterButton;
         _autoRecenterEnabled.Checked = cfg.AutoRecenterIdleSeconds > 0;
@@ -404,6 +405,18 @@ internal sealed class SettingsForm : Form
         if (combo.Items.Contains(value)) combo.SelectedItem = value;
         else if (combo.Items.Count > 0) combo.SelectedIndex = 0;
     }
+
+    // ThrottleBrakeMode → INI string. Direct enum.ToString() loses the underscore in
+    // PedalButtons / PedalTilt, so the dropdown couldn't match its items on round-trip.
+    private static string ModeToIniString(ThrottleBrakeMode mode) => mode switch
+    {
+        ThrottleBrakeMode.Stick => "stick",
+        ThrottleBrakeMode.Buttons => "buttons",
+        ThrottleBrakeMode.PedalButtons => "pedal_buttons",
+        ThrottleBrakeMode.PedalTilt => "pedal_tilt",
+        ThrottleBrakeMode.None => "none",
+        _ => "stick",
+    };
 
     private string ResolveSelectedAxis()
     {
