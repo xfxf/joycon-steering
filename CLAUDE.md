@@ -53,6 +53,7 @@ joycon-steering/
 │   ├── Steering/
 │   │   ├── SteeringMath.cs         Pure: angle → axis (-1..+1) with calibration
 │   │   ├── TiltPedalMath.cs        Pure: signed tilt → (throttle, brake)
+│   │   ├── StickPedalMath.cs       Pure: stick axis Y/X → (throttle, brake)
 │   │   └── AngleSource.cs          Axis picker + rising-edge detector
 │   │
 │   ├── Output/
@@ -84,14 +85,24 @@ joycon-steering/
 `PedalJoyConWorker` is an independent worker — same shape as `SteeringWorker`
 (open device, init, read loop, auto-reconnect) — that opens the OPPOSITE
 Joy-Con (`PedalsConfigHelper.PedalSideFor(steeringSide)`) and computes
-`(throttle, brake)` from either assignable buttons or a gravity-anchored
-tilt. It runs on its own task; the steering worker reads its `CurrentPedals`
-each tick and passes them to `WheelOutputMapper.Apply` as an
-`externalPedals` override.
+`(throttle, brake)` from one of three sources, chosen by
+`ThrottleBrakeMode`:
+
+- `PedalStick` — analog stick X or Y via `StickPedalMath`
+- `PedalButtons` — assignable digital buttons (one each for throttle/brake)
+- `PedalTilt` — angle from the same axis-resolution machinery used by the
+  steering worker (`SteeringAxisSelector` + `AngleSource`, with the same
+  five `auto/wheel/tilt/roll/pitch/yaw` choices, default `tilt`) →
+  `TiltPedalMath`
+
+The worker runs on its own task; the steering worker reads its
+`CurrentPedals` each tick and passes them to `WheelOutputMapper.Apply` as
+an `externalPedals` override.
 
 This worker is **only spawned when the configured throttle/brake mode
-requires it** (`pedal_buttons` or `pedal_tilt`), and gracefully handles
-the second Joy-Con being unpaired — it just sits in its reconnect loop and
+requires it** (anything starting with `Pedal*` —
+`PedalsConfigHelper.RequiresPedalJoyCon`), and gracefully handles the
+second Joy-Con being unpaired — it just sits in its reconnect loop and
 yields zero throttle/brake until the device shows up.
 
 The two workers write to *different* vJoy axes (steering writes X + buttons;
@@ -104,16 +115,16 @@ Everything else is pure and unit-tested:
 
 | Layer                                | Touches hardware?       | Unit tested? |
 | ------------------------------------ | ----------------------- | ------------ |
-| `JoyConDevice.Read`                  | Yes (HID over BT)       | No           |
-| `InputReportParser.*`                | No (pure bytes → state) | Yes          |
-| `MadgwickFilter.*`                   | No                      | Yes          |
-| `SteeringMath.*`                     | No                      | Yes          |
-| `AngleSource`, `RisingEdgeDetector`  | No                      | Yes          |
-| `WheelOutputMapper.Apply`            | No                      | Yes          |
-| `IniReader`, `IniWriter`, `AppConfig`| No                      | Yes          |
-| `VJoyOutput.*`                       | Yes (kernel driver)     | No           |
-| `SteeringWorker.*`                   | Owns hardware shims     | No (manual)  |
-| `Ui/*` (TrayApp, Diagnostics, Settings) | Yes (WinForms)       | No (manual)  |
+| `JoyConDevice.Read*`                    | Yes (HID over BT)       | No           |
+| `InputReportParser.*`                   | No (pure bytes → state) | Yes          |
+| `MadgwickFilter`, `GravityTiltAxis`, `WheelAxisIntegrator`, `GyroBiasCalibrator` | No | Yes |
+| `SteeringMath`, `TiltPedalMath`, `StickPedalMath` | No            | Yes          |
+| `AngleSource`, `RisingEdgeDetector`     | No                      | Yes          |
+| `WheelOutputMapper.Apply`               | No                      | Yes          |
+| `IniReader`, `IniWriter`, `AppConfig`, `JoyConBattery` | No        | Yes          |
+| `VJoyOutput.*`                          | Yes (kernel driver)     | No           |
+| `SteeringWorker.*`, `PedalJoyConWorker.*` | Owns hardware shims   | No (manual)  |
+| `Ui/*` (TrayApp, Diagnostics, Settings, PositionBar) | Yes (WinForms) | No (manual) |
 
 When adding behaviour, push logic into the pure layer where you can write
 a test for it. The hardware shims should stay tiny.
