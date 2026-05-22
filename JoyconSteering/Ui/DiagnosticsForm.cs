@@ -1,12 +1,13 @@
 using System.Drawing;
 using System.Windows.Forms;
+using JoyconSteering.Config;
 
 namespace JoyconSteering.Ui;
 
 internal sealed class DiagnosticsForm : Form
 {
-    /// <summary>Raised when the user confirms quit from the close-button dialog.</summary>
     public event Action? QuitRequested;
+    public event Action? SettingsRequested;
 
     private readonly Label _statusLabel;
     private readonly Label _angleLabel;
@@ -14,18 +15,27 @@ internal sealed class DiagnosticsForm : Form
     private readonly Label _stickYLabel;
     private readonly Label _batteryLabel;
     private readonly Label _errorLabel;
-    private readonly ProgressBar _steerBar;
+    private readonly Label _pedalStatusLabel;
+    private readonly Label _pedalValuesLabel;
+    private readonly Label _throttleLabel;
+    private readonly Label _brakeLabel;
+    private readonly PositionBar _steerBar;
+    private readonly PositionBar _throttleBar;
+    private readonly PositionBar _brakeBar;
     private readonly SteeringWorker _worker;
     private readonly System.Windows.Forms.Timer _timer;
     private bool _confirmedQuit;
+    private AppConfig _config;
 
-    public DiagnosticsForm(SteeringWorker worker)
+    public DiagnosticsForm(SteeringWorker worker, AppConfig config)
     {
         _worker = worker;
+        _config = config;
         Text = "JoyconSteering";
-        Width = 500;
-        Height = 360;
+        Width = 520;
+        Height = 480;
         FormBorderStyle = FormBorderStyle.Sizable;
+        MinimumSize = new Size(500, 460);
         MinimizeBox = true;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -36,39 +46,41 @@ internal sealed class DiagnosticsForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 8,
             Padding = new Padding(12),
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
         };
-        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130));
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        for (int i = 0; i < grid.RowCount; i++) grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        _statusLabel = AddRow(grid, 0, "Status:");
-        _angleLabel = AddRow(grid, 1, "Angle:");
-        _steerLabel = AddRow(grid, 2, "Steer axis:");
+        _statusLabel  = AddLabelRow(grid, "Status:");
+        _angleLabel   = AddLabelRow(grid, "Wheel angle:");
+        _steerLabel   = AddLabelRow(grid, "Steer axis:");
 
-        grid.Controls.Add(new Label { Text = "Steer bar:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 3);
-        _steerBar = new ProgressBar
-        {
-            Dock = DockStyle.Fill,
-            Minimum = 0,
-            Maximum = 1000,
-            Value = 500,
-            Style = ProgressBarStyle.Continuous,
-            Height = 24,
-        };
-        grid.Controls.Add(_steerBar, 1, 3);
+        _steerBar = new PositionBar(bipolar: true, Color.FromArgb(35, 132, 213)) { Dock = DockStyle.Fill, Height = 22 };
+        AddControlRow(grid, "Steering bar:", _steerBar);
 
-        _stickYLabel = AddRow(grid, 4, "Stick Y:");
-        _batteryLabel = AddRow(grid, 5, "Battery:");
-        _errorLabel = AddRow(grid, 6, "Error:");
+        _throttleLabel = AddLabelRow(grid, "Throttle:");
+        _throttleBar = new PositionBar(bipolar: false, Color.FromArgb(67, 160, 71)) { Dock = DockStyle.Fill, Height = 18 };
+        AddControlRow(grid, "Throttle bar:", _throttleBar);
+
+        _brakeLabel = AddLabelRow(grid, "Brake:");
+        _brakeBar = new PositionBar(bipolar: false, Color.FromArgb(229, 57, 53)) { Dock = DockStyle.Fill, Height = 18 };
+        AddControlRow(grid, "Brake bar:", _brakeBar);
+
+        _stickYLabel      = AddLabelRow(grid, "Stick Y:");
+        _batteryLabel     = AddLabelRow(grid, "Battery:");
+        _pedalStatusLabel = AddLabelRow(grid, "Pedal JoyCon:");
+        _pedalValuesLabel = AddLabelRow(grid, "  T/B/tilt:");
+        _errorLabel       = AddLabelRow(grid, "Error:");
         _errorLabel.ForeColor = Color.Firebrick;
 
         var buttons = new FlowLayoutPanel
         {
-            Dock = DockStyle.Fill,
             FlowDirection = FlowDirection.LeftToRight,
+            Dock = DockStyle.Fill,
             Height = 38,
+            AutoSize = true,
         };
         var recenter = new Button { Text = "Recenter", Width = 100 };
         var settings = new Button { Text = "Settings…", Width = 100 };
@@ -76,7 +88,7 @@ internal sealed class DiagnosticsForm : Form
         settings.Click += (s, e) => SettingsRequested?.Invoke();
         buttons.Controls.Add(recenter);
         buttons.Controls.Add(settings);
-        grid.Controls.Add(buttons, 1, 7);
+        AddControlRow(grid, "", buttons);
 
         Controls.Add(grid);
 
@@ -86,15 +98,61 @@ internal sealed class DiagnosticsForm : Form
         Logger.Info("DiagnosticsForm shown");
     }
 
-    public event Action? SettingsRequested;
-
-    private static Label AddRow(TableLayoutPanel grid, int row, string label)
+    public void UpdateConfig(AppConfig newConfig)
     {
-        var key = new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+        _config = newConfig;
+        ApplyDeadzoneVisuals();
+    }
+
+    private void ApplyDeadzoneVisuals()
+    {
+        // Steering deadzone in fraction of half-range
+        double halfRange = Math.Max(1, _config.RangeDegrees);
+        _steerBar.Deadzone = Math.Clamp(_config.DeadzoneDegrees / halfRange, 0, 1);
+
+        // Throttle/brake deadzone visual
+        switch (_config.ThrottleBrake)
+        {
+            case ThrottleBrakeMode.Stick:
+                _throttleBar.Deadzone = _config.StickDeadzone;
+                _brakeBar.Deadzone    = _config.StickDeadzone;
+                break;
+            case ThrottleBrakeMode.PedalTilt:
+            {
+                double tiltRange = Math.Max(1, _config.PedalTiltRangeDegrees);
+                double dz = Math.Clamp(_config.PedalTiltDeadzoneDegrees / tiltRange, 0, 1);
+                _throttleBar.Deadzone = dz;
+                _brakeBar.Deadzone    = dz;
+                break;
+            }
+            default:
+                _throttleBar.Deadzone = 0;
+                _brakeBar.Deadzone    = 0;
+                break;
+        }
+    }
+
+    private static Label AddLabelRow(TableLayoutPanel grid, string label)
+    {
+        int row = grid.RowCount;
+        grid.RowCount++;
+        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var key = new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoSize = false, Height = 22 };
         var val = new Label { Text = "—", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoSize = false, Height = 22, Font = new Font("Consolas", 10) };
         grid.Controls.Add(key, 0, row);
         grid.Controls.Add(val, 1, row);
         return val;
+    }
+
+    private static void AddControlRow(TableLayoutPanel grid, string label, Control control)
+    {
+        int row = grid.RowCount;
+        grid.RowCount++;
+        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        var key = new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoSize = false, Height = 26 };
+        control.Margin = new Padding(0, 3, 0, 3);
+        grid.Controls.Add(key, 0, row);
+        grid.Controls.Add(control, 1, row);
     }
 
     private void RefreshStatus()
@@ -106,13 +164,56 @@ internal sealed class DiagnosticsForm : Form
         _angleLabel.Text = $"{s.AngleDeg,7:F1}°";
         _steerLabel.Text = $"{s.Steer,+6:F2}" + (s.GyroSaturated ? "  ⚠ SAT" : "");
         _steerLabel.ForeColor = s.GyroSaturated ? Color.OrangeRed : Color.Black;
-        _steerBar.Value = (int)Math.Round((Math.Clamp(s.Steer, -1, 1) + 1) * 500);
+        _steerBar.Value = Math.Clamp(s.Steer, -1, 1);
         _stickYLabel.Text = $"{s.StickY,+5:F2}";
         _batteryLabel.Text = $"{s.BatteryPercent}%{(s.Charging ? " (charging)" : "")}";
+
+        var p = _worker.Pedals.Status;
+        // Throttle / brake values come from either the pedal worker (when enabled) or
+        // are computed from the steering joycon's stick — we don't have a clean live
+        // readout for the stick path yet, so show the pedal-worker values when active,
+        // and show "via stick" placeholders otherwise.
+        double throttle = 0, brake = 0;
+        if (PedalsConfigHelper.RequiresPedalJoyCon(_config.ThrottleBrake))
+        {
+            throttle = p.Throttle;
+            brake    = p.Brake;
+        }
+        else if (_config.ThrottleBrake == ThrottleBrakeMode.Stick)
+        {
+            // Stick Y: positive → throttle, negative → brake (after deadzone).
+            double y = s.StickY;
+            double dz = _config.StickDeadzone;
+            if (y > dz)        throttle = Math.Clamp((y - dz) / (1 - dz), 0, 1);
+            else if (y < -dz)  brake    = Math.Clamp((-y - dz) / (1 - dz), 0, 1);
+        }
+        _throttleLabel.Text = $"{throttle:F2}";
+        _brakeLabel.Text    = $"{brake:F2}";
+        _throttleBar.Value  = throttle;
+        _brakeBar.Value     = brake;
+
+        if (!p.Running)
+        {
+            _pedalStatusLabel.Text = "not in use";
+            _pedalStatusLabel.ForeColor = Color.DimGray;
+            _pedalValuesLabel.Text = "—";
+        }
+        else if (p.ErrorMessage is not null || !p.Connected)
+        {
+            _pedalStatusLabel.Text = "waiting…";
+            _pedalStatusLabel.ForeColor = Color.DarkOrange;
+            _pedalValuesLabel.Text = p.ErrorMessage ?? "disconnected";
+        }
+        else
+        {
+            _pedalStatusLabel.Text = $"Connected  bat {p.BatteryPercent}%";
+            _pedalStatusLabel.ForeColor = Color.ForestGreen;
+            _pedalValuesLabel.Text = $"tilt={p.TiltAngleDeg:+0.0;-0.0;0.0}°";
+        }
+
         _errorLabel.Text = s.ErrorMessage ?? "";
     }
 
-    /// <summary>Show window from tray (also restores from minimized).</summary>
     public void ShowFromTray()
     {
         if (!Visible) Show();
@@ -127,15 +228,20 @@ internal sealed class DiagnosticsForm : Form
         base.OnResize(e);
         if (WindowState == FormWindowState.Minimized)
         {
-            Hide(); // sends to tray
+            Hide();
             Logger.Info("Window minimized to tray");
         }
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        ApplyDeadzoneVisuals();
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         if (_confirmedQuit) { base.OnFormClosing(e); return; }
-
         if (e.CloseReason == CloseReason.UserClosing)
         {
             var result = MessageBox.Show(this,
@@ -144,11 +250,7 @@ internal sealed class DiagnosticsForm : Form
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question,
                 MessageBoxDefaultButton.Button2);
-            if (result != DialogResult.Yes)
-            {
-                e.Cancel = true;
-                return;
-            }
+            if (result != DialogResult.Yes) { e.Cancel = true; return; }
             Logger.Info("User confirmed quit");
             _confirmedQuit = true;
             QuitRequested?.Invoke();

@@ -28,6 +28,7 @@ joycon-steering/
 │   ├── app.manifest                DPI awareness + Win10/11 compat
 │   ├── Program.cs                  Entry point (Application.Run + TrayAppContext)
 │   ├── SteeringWorker.cs           Owns runtime pipeline; Start/Stop/Recenter
+│   ├── PedalJoyConWorker.cs        Optional second-Joy-Con worker for throttle/brake
 │   │
 │   ├── Config/
 │   │   ├── IniReader.cs            Section-based INI parser
@@ -36,15 +37,23 @@ joycon-steering/
 │   │
 │   ├── JoyCon/
 │   │   ├── JoyConDevice.cs         HID I/O (HARDWARE-TOUCHING)
-│   │   ├── InputReportParser.cs    Pure: bytes → JoyConState
-│   │   ├── JoyConState.cs          Record struct: buttons + stick + 3 IMU samples
+│   │   ├── InputReportParser.cs    Pure: bytes → JoyConState / RightJoyConState
+│   │   ├── JoyConState.cs          Record struct (left): buttons + stick + 3 IMU samples
+│   │   ├── RightJoyConState.cs     Record struct (right): same shape, right buttons
 │   │   ├── ImuSample.cs            Record struct: accel (g) + gyro (deg/s)
-│   │   ├── JoyConButtons.cs        Button flag enum + name lookup
+│   │   ├── JoyConButtons.cs        Left button flag enum + name lookup
+│   │   ├── RightJoyConButtons.cs   Right button flag enum + name lookup
+│   │   ├── JoyConBattery.cs        Nibble decode → percent + charging
 │   │   └── Fusion/
-│   │       └── MadgwickFilter.cs   Quaternion AHRS, IMU-only
+│   │       ├── MadgwickFilter.cs   Quaternion AHRS, IMU-only + ZUPT
+│   │       ├── GyroBiasCalibrator.cs Startup bias cal + running refinement
+│   │       ├── GravityTiltAxis.cs  Body-frame tilt from gravity vector
+│   │       └── WheelAxisIntegrator.cs Body-frame gyro Z integration
 │   │
 │   ├── Steering/
 │   │   ├── SteeringMath.cs         Pure: angle → axis (-1..+1) with calibration
+│   │   ├── TiltPedalMath.cs        Pure: signed tilt → (throttle, brake)
+│   │   ├── StickPedalMath.cs       Pure: stick axis Y/X → (throttle, brake)
 │   │   └── AngleSource.cs          Axis picker + rising-edge detector
 │   │
 │   ├── Output/
@@ -71,23 +80,51 @@ joycon-steering/
         └── ReportBuilder.cs        Synthesises 0x30 HID reports for parser tests
 ```
 
+## Optional second Joy-Con (pedals)
+
+`PedalJoyConWorker` is an independent worker — same shape as `SteeringWorker`
+(open device, init, read loop, auto-reconnect) — that opens the OPPOSITE
+Joy-Con (`PedalsConfigHelper.PedalSideFor(steeringSide)`) and computes
+`(throttle, brake)` from one of three sources, chosen by
+`ThrottleBrakeMode`:
+
+- `PedalStick` — analog stick X or Y via `StickPedalMath`
+- `PedalButtons` — assignable digital buttons (one each for throttle/brake)
+- `PedalTilt` — angle from the same axis-resolution machinery used by the
+  steering worker (`SteeringAxisSelector` + `AngleSource`, with the same
+  five `auto/wheel/tilt/roll/pitch/yaw` choices, default `tilt`) →
+  `TiltPedalMath`
+
+The worker runs on its own task; the steering worker reads its
+`CurrentPedals` each tick and passes them to `WheelOutputMapper.Apply` as
+an `externalPedals` override.
+
+This worker is **only spawned when the configured throttle/brake mode
+requires it** (anything starting with `Pedal*` —
+`PedalsConfigHelper.RequiresPedalJoyCon`), and gracefully handles the
+second Joy-Con being unpaired — it just sits in its reconnect loop and
+yields zero throttle/brake until the device shows up.
+
+The two workers write to *different* vJoy axes (steering writes X + buttons;
+pedals writes Y + Rz when external), so there's no contention.
+
 ## Architectural boundaries
 
-Two classes touch hardware. The UI is a thin shell over a single
-`SteeringWorker`. Everything else is pure and unit-tested:
+Two classes touch hardware. The UI is a thin shell over the workers.
+Everything else is pure and unit-tested:
 
 | Layer                                | Touches hardware?       | Unit tested? |
 | ------------------------------------ | ----------------------- | ------------ |
-| `JoyConDevice.Read`                  | Yes (HID over BT)       | No           |
-| `InputReportParser.*`                | No (pure bytes → state) | Yes          |
-| `MadgwickFilter.*`                   | No                      | Yes          |
-| `SteeringMath.*`                     | No                      | Yes          |
-| `AngleSource`, `RisingEdgeDetector`  | No                      | Yes          |
-| `WheelOutputMapper.Apply`            | No                      | Yes          |
-| `IniReader`, `IniWriter`, `AppConfig`| No                      | Yes          |
-| `VJoyOutput.*`                       | Yes (kernel driver)     | No           |
-| `SteeringWorker.*`                   | Owns hardware shims     | No (manual)  |
-| `Ui/*` (TrayApp, Diagnostics, Settings) | Yes (WinForms)       | No (manual)  |
+| `JoyConDevice.Read*`                    | Yes (HID over BT)       | No           |
+| `InputReportParser.*`                   | No (pure bytes → state) | Yes          |
+| `MadgwickFilter`, `GravityTiltAxis`, `WheelAxisIntegrator`, `GyroBiasCalibrator` | No | Yes |
+| `SteeringMath`, `TiltPedalMath`, `StickPedalMath` | No            | Yes          |
+| `AngleSource`, `RisingEdgeDetector`     | No                      | Yes          |
+| `WheelOutputMapper.Apply`               | No                      | Yes          |
+| `IniReader`, `IniWriter`, `AppConfig`, `JoyConBattery` | No        | Yes          |
+| `VJoyOutput.*`                          | Yes (kernel driver)     | No           |
+| `SteeringWorker.*`, `PedalJoyConWorker.*` | Owns hardware shims   | No (manual)  |
+| `Ui/*` (TrayApp, Diagnostics, Settings, PositionBar) | Yes (WinForms) | No (manual) |
 
 When adding behaviour, push logic into the pure layer where you can write
 a test for it. The hardware shims should stay tiny.

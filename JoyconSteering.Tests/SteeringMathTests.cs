@@ -118,9 +118,9 @@ public class SteeringMathTests
 public class SteeringAxisSelectorTests
 {
     [Fact]
-    public void Auto_PicksWheel_ForSidewaysGrip()
+    public void Auto_PicksTilt_ForSidewaysGrip()
     {
-        Assert.Equal(SelectedAxis.Wheel,
+        Assert.Equal(SelectedAxis.Tilt,
             SteeringAxisSelector.Resolve(JoyconSteering.Config.SteeringAxis.Auto, JoyconSteering.Config.JoyConSide.Left));
     }
 

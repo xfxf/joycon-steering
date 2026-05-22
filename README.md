@@ -84,9 +84,18 @@ INI parse).
   - Enable axes **X**, **Y**, and **Rz**.
   - Set **Number of Buttons** to at least **16**.
   - Click **Apply**.
-- **A left Joy-Con** paired via Windows Bluetooth (hold the small recessed
+- **A Joy-Con** paired via Windows Bluetooth (hold the small recessed
   button between SR and SL until the lights race; pair from
-  Settings → Bluetooth).
+  Settings → Bluetooth). Either left or right works as the steering Joy-Con
+  — pick one in Settings.
+- **(Optional but recommended) A second Joy-Con** for throttle/brake.
+  Pair it via Bluetooth alongside the steering Joy-Con and the app will
+  use its analog stick for accelerator/brake by default
+  (`pedal_stick` mode). You can switch to `pedal_buttons` (assignable
+  digital buttons) or `pedal_tilt` (gravity-anchored analog tilt) in
+  Settings. Skipping the second Joy-Con is fine — switch the mode to
+  `stick` or `buttons` in Settings to use the steering Joy-Con for
+  everything.
 
 ## Run
 
@@ -164,8 +173,18 @@ without restarting the exe. Highlights:
   disable; 8-15 ms feels good.
 - `[steering] invert = true` — flip the direction if rotation feels
   backwards.
-- `[throttle_brake] mode` — `stick` (analog stick Y, recommended),
-  `buttons` (L = throttle, ZL = brake, both digital), or `none`.
+- `[throttle_brake] mode` — pedal source (default `pedal_stick`):
+  - `stick` — steering Joy-Con's analog stick (default Y axis; up = throttle, down = brake)
+  - `buttons` — steering Joy-Con's L = throttle, ZL = brake (digital)
+  - `pedal_stick` — pedal (other) Joy-Con's analog stick (**default**)
+  - `pedal_buttons` — pedal Joy-Con's assignable buttons (digital).
+    See `[pedal_buttons]` section to pick which.
+  - `pedal_tilt` — pedal Joy-Con's tilt (analog, gravity-anchored, drift-free).
+    See `[pedal_tilt]` section for axis/range/deadzone/recenter.
+  - `none` — disable; bind throttle/brake to keyboard or another device.
+- `[throttle_brake] stick_axis` — for both stick modes: `y` (up = throttle,
+  default) or `x` (right = throttle). Use `x` if the pedal Joy-Con is
+  mounted rotated 90°.
 - `[buttons]` — remap each physical Joy-Con button (up, down, left, right,
   L, ZL, minus, stick, sl, sr, capture) to a vJoy button number 1-128. Set
   any to `0` to disable.
@@ -195,9 +214,8 @@ and full pipeline composition.
 - **Yaw drift.** If you reconfigure `[steering] axis` to `yaw`, expect
   drift over time and frequent recentering. The default (`auto` → roll) is
   gravity-anchored and doesn't drift.
-- **Left Joy-Con only.** The right Joy-Con HID is parsed but the button
-  bitmap is left-specific; right-Joy-Con support needs a small parser
-  branch.
+- **One Joy-Con for steering at a time.** Pick left or right in Settings.
+  The opposite one becomes the optional pedal Joy-Con.
 
 ## Troubleshooting
 

@@ -13,42 +13,60 @@ public sealed class WheelOutputMapper
 
     public WheelOutputMapper(AppConfig config) => _config = config;
 
-    public void Apply(double steering, JoyConState joycon, IWheelOutput sink)
+    /// <summary>
+    /// Apply one tick of input to the vJoy sink.
+    ///
+    /// <paramref name="rawButtons"/> is the steering Joy-Con's raw button word — bits
+    /// from either <see cref="LeftJoyConButton"/> or <see cref="RightJoyConButton"/>,
+    /// interpreted via <see cref="_config"/>.Side. This indirection means the same
+    /// mapper works whichever side the user has chosen for steering.
+    /// </summary>
+    public void Apply(double steering, double stickX, double stickY, uint rawButtons, IWheelOutput sink,
+        (double Throttle, double Brake)? externalPedals = null)
     {
         sink.SetSteering(Math.Clamp(steering, -1.0, 1.0));
 
-        var (throttle, brake) = ComputeThrottleBrake(joycon);
+        double throttle, brake;
+        if (PedalsConfigHelper.RequiresPedalJoyCon(_config.ThrottleBrake))
+        {
+            // Pedal joycon is the source; if it hasn't reported yet, safe zero.
+            (throttle, brake) = externalPedals ?? (0, 0);
+            throttle = Math.Clamp(throttle, 0.0, 1.0);
+            brake    = Math.Clamp(brake,    0.0, 1.0);
+        }
+        else
+        {
+            (throttle, brake) = ComputeThrottleBrake(stickX, stickY, rawButtons);
+        }
         sink.SetThrottle(throttle);
         sink.SetBrake(brake);
 
         foreach (var (name, vjoyButton) in _config.ButtonMap)
         {
             if (vjoyButton <= 0) continue;
-            var jcb = JoyConButtonNames.FromName(name);
-            if (jcb == LeftJoyConButton.None) continue;
-            sink.SetButton(vjoyButton, joycon.Buttons.HasFlag(jcb));
+            sink.SetButton(vjoyButton, JoyConSideButtons.IsPressed(_config.Side, rawButtons, name));
         }
 
         sink.Flush();
     }
 
-    private (double Throttle, double Brake) ComputeThrottleBrake(JoyConState joycon)
+    private (double Throttle, double Brake) ComputeThrottleBrake(double stickX, double stickY, uint rawButtons)
     {
         switch (_config.ThrottleBrake)
         {
             case ThrottleBrakeMode.None:
                 return (0, 0);
             case ThrottleBrakeMode.Buttons:
-                return (joycon.Buttons.HasFlag(LeftJoyConButton.L) ? 1.0 : 0.0,
-                        joycon.Buttons.HasFlag(LeftJoyConButton.Zl) ? 1.0 : 0.0);
+                // Shoulder buttons for whichever side is the steering Joy-Con
+                // (L+ZL on left, R+ZR on right).
+                uint throttleBit = JoyConSideButtons.ThrottleShoulderBit(_config.Side);
+                uint brakeBit    = JoyConSideButtons.BrakeShoulderBit(_config.Side);
+                return ((rawButtons & throttleBit) != 0 ? 1.0 : 0.0,
+                        (rawButtons & brakeBit)    != 0 ? 1.0 : 0.0);
             case ThrottleBrakeMode.Stick:
             default:
-                double y = joycon.StickY;
-                double dead = _config.StickDeadzone;
-                double t = 0, b = 0;
-                if (y > dead) t = Math.Clamp((y - dead) / (1.0 - dead), 0.0, 1.0);
-                else if (y < -dead) b = Math.Clamp((-y - dead) / (1.0 - dead), 0.0, 1.0);
-                return (t, b);
+                double stickAxisValue = _config.StickAxis == StickAxis.X ? stickX : stickY;
+                return Steering.StickPedalMath.Compute(stickAxisValue, _config.StickDeadzone);
         }
     }
 }

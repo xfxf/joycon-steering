@@ -1,8 +1,22 @@
 namespace JoyconSteering.Config;
 
 public enum SteeringAxis { Auto, Roll, Pitch, Yaw, Wheel, Tilt }
-public enum ThrottleBrakeMode { Stick, Buttons, None }
+public enum ThrottleBrakeMode { Stick, Buttons, PedalStick, PedalButtons, PedalTilt, None }
+public enum StickAxis { Y, X }
 public enum JoyConSide { Left, Right }
+
+public static class PedalsConfigHelper
+{
+    /// <summary>True when the configured mode reads from the OTHER Joy-Con (not the steering one).</summary>
+    public static bool RequiresPedalJoyCon(ThrottleBrakeMode mode)
+        => mode is ThrottleBrakeMode.PedalStick
+             or ThrottleBrakeMode.PedalButtons
+             or ThrottleBrakeMode.PedalTilt;
+
+    /// <summary>The pedal Joy-Con is always the one opposite to the steering Joy-Con.</summary>
+    public static JoyConSide PedalSideFor(JoyConSide steeringSide)
+        => steeringSide == JoyConSide.Left ? JoyConSide.Right : JoyConSide.Left;
+}
 
 public sealed record AppConfig
 {
@@ -16,7 +30,19 @@ public sealed record AppConfig
     public bool Invert { get; init; }
 
     public ThrottleBrakeMode ThrottleBrake { get; init; }
+    public StickAxis StickAxis { get; init; } = StickAxis.Y;
     public double StickDeadzone { get; init; }
+
+    // ── Pedal Joy-Con: button mode ──────────────────────────────────────────
+    public string PedalThrottleButton { get; init; } = "zr";
+    public string PedalBrakeButton    { get; init; } = "r";
+
+    // ── Pedal Joy-Con: tilt mode ────────────────────────────────────────────
+    public SteeringAxis PedalTiltAxis { get; init; } = SteeringAxis.Auto;
+    public double PedalTiltRangeDegrees    { get; init; } = 45;
+    public double PedalTiltDeadzoneDegrees { get; init; } = 8;
+    public bool   PedalTiltInvert          { get; init; }
+    public string PedalRecenterButton      { get; init; } = "stick";
 
     public Dictionary<string, int> ButtonMap { get; init; } = new();
     public string RecenterButton { get; init; } = "stick";
@@ -42,12 +68,30 @@ public sealed record AppConfig
             _ => SteeringAxis.Auto,
         };
 
-        var tbStr = ini.GetString("throttle_brake", "mode", "stick").ToLowerInvariant();
+        var tbStr = ini.GetString("throttle_brake", "mode", "pedal_stick").ToLowerInvariant();
         var tb = tbStr switch
         {
+            "stick" => ThrottleBrakeMode.Stick,
             "buttons" => ThrottleBrakeMode.Buttons,
+            "pedal_stick" => ThrottleBrakeMode.PedalStick,
+            "pedal_buttons" => ThrottleBrakeMode.PedalButtons,
+            "pedal_tilt" => ThrottleBrakeMode.PedalTilt,
             "none" => ThrottleBrakeMode.None,
-            _ => ThrottleBrakeMode.Stick,
+            _ => ThrottleBrakeMode.PedalStick,
+        };
+
+        var stickAxisStr = ini.GetString("throttle_brake", "stick_axis", "y").ToLowerInvariant();
+        var stickAxis = stickAxisStr == "x" ? StickAxis.X : StickAxis.Y;
+
+        var pedalAxisStr = ini.GetString("pedal_tilt", "axis", "auto").ToLowerInvariant();
+        var pedalAxis = pedalAxisStr switch
+        {
+            "roll" => SteeringAxis.Roll,
+            "pitch" => SteeringAxis.Pitch,
+            "yaw" => SteeringAxis.Yaw,
+            "wheel" => SteeringAxis.Wheel,
+            "tilt" => SteeringAxis.Tilt,
+            _ => SteeringAxis.Auto,
         };
 
         var buttonMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -64,7 +108,15 @@ public sealed record AppConfig
             SmoothingMs = ini.GetDouble("steering", "smoothing_ms", 10),
             Invert = ini.GetBool("steering", "invert", true),
             ThrottleBrake = tb,
+            StickAxis = stickAxis,
             StickDeadzone = ini.GetDouble("throttle_brake", "stick_deadzone", 0.15),
+            PedalThrottleButton = ini.GetString("pedal_buttons", "throttle", "zr").ToLowerInvariant(),
+            PedalBrakeButton    = ini.GetString("pedal_buttons", "brake",    "r").ToLowerInvariant(),
+            PedalTiltAxis = pedalAxis,
+            PedalTiltRangeDegrees    = ini.GetDouble("pedal_tilt", "range_degrees", 45),
+            PedalTiltDeadzoneDegrees = ini.GetDouble("pedal_tilt", "deadzone_degrees", 8),
+            PedalTiltInvert          = ini.GetBool("pedal_tilt", "invert", false),
+            PedalRecenterButton      = ini.GetString("pedal_tilt", "recenter_button", "stick").ToLowerInvariant(),
             ButtonMap = buttonMap,
             RecenterButton = ini.GetString("recenter", "button", "stick").ToLowerInvariant(),
             AutoRecenterIdleSeconds = ini.GetDouble("recenter", "auto_recenter_idle_seconds", 0),
