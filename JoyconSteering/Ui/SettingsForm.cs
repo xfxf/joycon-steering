@@ -24,6 +24,7 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown _smoothing = NewNum(0, 200, 0);
     private readonly CheckBox _invert = new() { Text = "Invert steering direction" };
     private readonly ComboBox _tbMode = new();
+    private readonly ComboBox _stickAxis = new();
     private readonly NumericUpDown _stickDead = NewNum(0, 0.9m, 2);
     private readonly ComboBox _recenter = new();
     private readonly CheckBox _autoRecenterEnabled = new() { Text = "Auto-recenter when held still" };
@@ -43,6 +44,26 @@ internal sealed class SettingsForm : Form
 
     private static readonly string[] ButtonNames =
         { "up", "down", "left", "right", "l", "zl", "minus", "stick", "sl", "sr", "capture" };
+
+    /// <summary>User-friendly throttle/brake mode labels. ToString = displayed text;
+    /// IniValue is the canonical key written to App.ini.</summary>
+    private sealed class ModeOption
+    {
+        public string Display { get; }
+        public string IniValue { get; }
+        public ModeOption(string display, string iniValue) { Display = display; IniValue = iniValue; }
+        public override string ToString() => Display;
+    }
+
+    private static readonly ModeOption[] _modeOptions =
+    {
+        new("Steering Joy-Con's stick (Y)",       "stick"),
+        new("Steering Joy-Con's L / ZL buttons",  "buttons"),
+        new("Pedal Joy-Con's stick (Y)",          "pedal_stick"),
+        new("Pedal Joy-Con's buttons",            "pedal_buttons"),
+        new("Pedal Joy-Con's tilt (Mario Kart)",  "pedal_tilt"),
+        new("Off — bind in-game to keyboard etc.","none"),
+    };
     private static readonly string[] LeftButtonNames =
         { "up", "down", "left", "right", "l", "zl", "minus", "stick", "sl", "sr", "capture" };
     private static readonly string[] RightButtonNames =
@@ -65,10 +86,11 @@ internal sealed class SettingsForm : Form
         // Populate combo box options
         _side.Items.AddRange(new object[] { "left", "right" });
         _axisAdvanced.Items.AddRange(new object[] { "(use mode above)", "roll", "pitch", "yaw" });
-        _tbMode.Items.AddRange(new object[] { "stick", "buttons", "pedal_buttons", "pedal_tilt", "none" });
+        _tbMode.Items.AddRange(_modeOptions.Cast<object>().ToArray());
+        _stickAxis.Items.AddRange(new object[] { "y (up = throttle)", "x (right = throttle)" });
         _recenter.Items.AddRange(ButtonNames.Cast<object>().Append("none").ToArray());
         _pedalAxisAdvanced.Items.AddRange(new object[] { "(use mode above)", "roll", "pitch", "yaw" });
-        foreach (var combo in new[] { _side, _axisAdvanced, _tbMode, _recenter, _pedalThrottleBtn, _pedalBrakeBtn, _pedalAxisAdvanced, _pedalRecenter })
+        foreach (var combo in new[] { _side, _axisAdvanced, _tbMode, _stickAxis, _recenter, _pedalThrottleBtn, _pedalBrakeBtn, _pedalAxisAdvanced, _pedalRecenter })
             combo.DropDownStyle = ComboBoxStyle.DropDownList;
 
         // Pedal button dropdowns are side-aware (populated from the OPPOSITE joy-con's buttons).
@@ -185,7 +207,9 @@ internal sealed class SettingsForm : Form
         var tab = new TabPage("Pedals");
         var grid = NewFormGrid();
         AddPair(grid, "Throttle/Brake mode:", _tbMode);
+        AddPair(grid, "Stick axis:", _stickAxis);
         AddPair(grid, "Stick deadzone (0-1):", _stickDead);
+        _tbMode.SelectedIndexChanged += (s, e) => RefreshPedalFieldVisibility();
 
         // Section separator + label for pedal-joy-con-specific settings
         var sep = new Label
@@ -412,8 +436,11 @@ internal sealed class SettingsForm : Form
         _deadzone.Value = (decimal)cfg.DeadzoneDegrees;
         _smoothing.Value = (decimal)cfg.SmoothingMs;
         _invert.Checked = cfg.Invert;
-        _tbMode.SelectedItem = ModeToIniString(cfg.ThrottleBrake);
+        var iniValue = ModeToIniString(cfg.ThrottleBrake);
+        _tbMode.SelectedItem = _modeOptions.FirstOrDefault(m => m.IniValue == iniValue) ?? _modeOptions[0];
+        _stickAxis.SelectedIndex = cfg.StickAxis == StickAxis.X ? 1 : 0;
         _stickDead.Value = (decimal)cfg.StickDeadzone;
+        RefreshPedalFieldVisibility();
         _recenter.SelectedItem = cfg.RecenterButton;
         _autoRecenterEnabled.Checked = cfg.AutoRecenterIdleSeconds > 0;
         _autoRecenter.Enabled = _autoRecenterEnabled.Checked;
@@ -462,10 +489,11 @@ internal sealed class SettingsForm : Form
     {
         ThrottleBrakeMode.Stick => "stick",
         ThrottleBrakeMode.Buttons => "buttons",
+        ThrottleBrakeMode.PedalStick => "pedal_stick",
         ThrottleBrakeMode.PedalButtons => "pedal_buttons",
         ThrottleBrakeMode.PedalTilt => "pedal_tilt",
         ThrottleBrakeMode.None => "none",
-        _ => "stick",
+        _ => "pedal_tilt",
     };
 
     private string ResolveSelectedAxis()
@@ -476,6 +504,28 @@ internal sealed class SettingsForm : Form
         if (_modeTilt.Checked) return "tilt";
         if (_modeWheel.Checked) return "wheel";
         return "auto";
+    }
+
+    private void RefreshPedalFieldVisibility()
+    {
+        // Enable / disable irrelevant fields based on the chosen throttle/brake mode so
+        // the Pedals tab isn't a wall of greyable options when only a few apply.
+        var mode = (_tbMode.SelectedItem as ModeOption)?.IniValue ?? "pedal_stick";
+        bool usesStick     = mode is "stick" or "pedal_stick";
+        bool usesButtons   = mode == "pedal_buttons";
+        bool usesTilt      = mode == "pedal_tilt";
+
+        _stickAxis.Enabled         = usesStick;
+        _stickDead.Enabled         = usesStick;
+        _pedalThrottleBtn.Enabled  = usesButtons;
+        _pedalBrakeBtn.Enabled     = usesButtons;
+        _pedalModeWheel.Enabled    = usesTilt;
+        _pedalModeTilt.Enabled     = usesTilt;
+        _pedalAxisAdvanced.Enabled = usesTilt;
+        _pedalTiltRange.Enabled    = usesTilt;
+        _pedalTiltDeadzone.Enabled = usesTilt;
+        _pedalTiltInvert.Enabled   = usesTilt;
+        _pedalRecenter.Enabled     = usesTilt;
     }
 
     private string ResolvePedalAxis()
@@ -500,7 +550,8 @@ internal sealed class SettingsForm : Form
                 [("steering", "deadzone_degrees")] = _deadzone.Value.ToString(CultureInfo.InvariantCulture),
                 [("steering", "smoothing_ms")] = _smoothing.Value.ToString(CultureInfo.InvariantCulture),
                 [("steering", "invert")] = _invert.Checked ? "true" : "false",
-                [("throttle_brake", "mode")] = _tbMode.SelectedItem?.ToString() ?? "stick",
+                [("throttle_brake", "mode")] = (_tbMode.SelectedItem as ModeOption)?.IniValue ?? "pedal_stick",
+                [("throttle_brake", "stick_axis")] = _stickAxis.SelectedIndex == 1 ? "x" : "y",
                 [("throttle_brake", "stick_deadzone")] = _stickDead.Value.ToString(CultureInfo.InvariantCulture),
                 [("recenter", "button")] = _recenter.SelectedItem?.ToString() ?? "stick",
                 [("recenter", "auto_recenter_idle_seconds")] =

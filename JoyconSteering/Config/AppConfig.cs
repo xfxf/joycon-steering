@@ -1,14 +1,17 @@
 namespace JoyconSteering.Config;
 
 public enum SteeringAxis { Auto, Roll, Pitch, Yaw, Wheel, Tilt }
-public enum ThrottleBrakeMode { Stick, Buttons, PedalButtons, PedalTilt, None }
+public enum ThrottleBrakeMode { Stick, Buttons, PedalStick, PedalButtons, PedalTilt, None }
+public enum StickAxis { Y, X }
 public enum JoyConSide { Left, Right }
 
 public static class PedalsConfigHelper
 {
     /// <summary>True when the configured mode reads from the OTHER Joy-Con (not the steering one).</summary>
     public static bool RequiresPedalJoyCon(ThrottleBrakeMode mode)
-        => mode is ThrottleBrakeMode.PedalButtons or ThrottleBrakeMode.PedalTilt;
+        => mode is ThrottleBrakeMode.PedalStick
+             or ThrottleBrakeMode.PedalButtons
+             or ThrottleBrakeMode.PedalTilt;
 
     /// <summary>The pedal Joy-Con is always the one opposite to the steering Joy-Con.</summary>
     public static JoyConSide PedalSideFor(JoyConSide steeringSide)
@@ -27,6 +30,7 @@ public sealed record AppConfig
     public bool Invert { get; init; }
 
     public ThrottleBrakeMode ThrottleBrake { get; init; }
+    public StickAxis StickAxis { get; init; } = StickAxis.Y;
     public double StickDeadzone { get; init; }
 
     // ── Pedal Joy-Con: button mode ──────────────────────────────────────────
@@ -64,16 +68,20 @@ public sealed record AppConfig
             _ => SteeringAxis.Auto,
         };
 
-        var tbStr = ini.GetString("throttle_brake", "mode", "pedal_tilt").ToLowerInvariant();
+        var tbStr = ini.GetString("throttle_brake", "mode", "pedal_stick").ToLowerInvariant();
         var tb = tbStr switch
         {
             "stick" => ThrottleBrakeMode.Stick,
             "buttons" => ThrottleBrakeMode.Buttons,
+            "pedal_stick" => ThrottleBrakeMode.PedalStick,
             "pedal_buttons" => ThrottleBrakeMode.PedalButtons,
             "pedal_tilt" => ThrottleBrakeMode.PedalTilt,
             "none" => ThrottleBrakeMode.None,
-            _ => ThrottleBrakeMode.PedalTilt,
+            _ => ThrottleBrakeMode.PedalStick,
         };
+
+        var stickAxisStr = ini.GetString("throttle_brake", "stick_axis", "y").ToLowerInvariant();
+        var stickAxis = stickAxisStr == "x" ? StickAxis.X : StickAxis.Y;
 
         var pedalAxisStr = ini.GetString("pedal_tilt", "axis", "auto").ToLowerInvariant();
         var pedalAxis = pedalAxisStr switch
@@ -100,6 +108,7 @@ public sealed record AppConfig
             SmoothingMs = ini.GetDouble("steering", "smoothing_ms", 10),
             Invert = ini.GetBool("steering", "invert", true),
             ThrottleBrake = tb,
+            StickAxis = stickAxis,
             StickDeadzone = ini.GetDouble("throttle_brake", "stick_deadzone", 0.15),
             PedalThrottleButton = ini.GetString("pedal_buttons", "throttle", "zr").ToLowerInvariant(),
             PedalBrakeButton    = ini.GetString("pedal_buttons", "brake",    "r").ToLowerInvariant(),

@@ -55,12 +55,8 @@ public sealed class WheelOutputMapper
                         joycon.Buttons.HasFlag(LeftJoyConButton.Zl) ? 1.0 : 0.0);
             case ThrottleBrakeMode.Stick:
             default:
-                double y = joycon.StickY;
-                double dead = _config.StickDeadzone;
-                double t = 0, b = 0;
-                if (y > dead) t = Math.Clamp((y - dead) / (1.0 - dead), 0.0, 1.0);
-                else if (y < -dead) b = Math.Clamp((-y - dead) / (1.0 - dead), 0.0, 1.0);
-                return (t, b);
+                double stickAxisValue = _config.StickAxis == StickAxis.X ? joycon.StickX : joycon.StickY;
+                return Steering.StickPedalMath.Compute(stickAxisValue, _config.StickDeadzone);
         }
     }
 }

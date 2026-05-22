@@ -129,11 +129,13 @@ public sealed class PedalJoyConWorker : IDisposable
             bool throttlePressed = false, brakePressed = false;
             bool recenterPressed = false;
             int batRaw = 0;
+            double stickAxisValue = 0;
 
             if (pedalSide == JoyConSide.Right)
             {
                 var st = dev.ReadAsRight();
                 batRaw = st.Battery;
+                stickAxisValue = config.StickAxis == StickAxis.X ? st.StickX : st.StickY;
                 s0 = st.Sample0; s1 = st.Sample1; s2 = st.Sample2;
 
                 var throttleBtn = RightJoyConButtonNames.FromName(config.PedalThrottleButton);
@@ -147,6 +149,7 @@ public sealed class PedalJoyConWorker : IDisposable
             {
                 var st = dev.Read();
                 batRaw = st.Battery;
+                stickAxisValue = config.StickAxis == StickAxis.X ? st.StickX : st.StickY;
                 s0 = st.Sample0; s1 = st.Sample1; s2 = st.Sample2;
 
                 var throttleBtn = JoyConButtonNames.FromName(config.PedalThrottleButton);
@@ -212,6 +215,9 @@ public sealed class PedalJoyConWorker : IDisposable
                     break;
                 case ThrottleBrakeMode.PedalTilt:
                     (throttle, brake) = TiltPedalMath.Compute(angle, pedalSettings);
+                    break;
+                case ThrottleBrakeMode.PedalStick:
+                    (throttle, brake) = StickPedalMath.Compute(stickAxisValue, config.StickDeadzone);
                     break;
             }
 

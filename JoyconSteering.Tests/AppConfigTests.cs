@@ -25,7 +25,8 @@ public class AppConfigTests
         Assert.Equal(1.5, cfg.DeadzoneDegrees);
         Assert.Equal(10.0, cfg.SmoothingMs);
         Assert.True(cfg.Invert);
-        Assert.Equal(ThrottleBrakeMode.PedalTilt, cfg.ThrottleBrake);
+        Assert.Equal(ThrottleBrakeMode.PedalStick, cfg.ThrottleBrake);
+        Assert.Equal(StickAxis.Y, cfg.StickAxis);
         Assert.Equal(0.15, cfg.StickDeadzone);
         Assert.Equal("stick", cfg.RecenterButton);
         Assert.Equal(0.0, cfg.AutoRecenterIdleSeconds);
@@ -79,7 +80,7 @@ public class AppConfigTests
     [InlineData("none", ThrottleBrakeMode.None)]
     [InlineData("stick", ThrottleBrakeMode.Stick)]
     [InlineData("buttons", ThrottleBrakeMode.Buttons)]
-    [InlineData("garbage", ThrottleBrakeMode.PedalTilt)] // unknown → new default
+    [InlineData("garbage", ThrottleBrakeMode.PedalStick)] // unknown → new default
     public void ThrottleBrakeMode_ParsesAndDefaults(string mode, ThrottleBrakeMode expected)
     {
         var path = WriteTempIni($"[throttle_brake]\nmode = {mode}\n");

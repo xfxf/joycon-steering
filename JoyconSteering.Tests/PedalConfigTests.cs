@@ -15,10 +15,11 @@ public class PedalConfigTests
     [Theory]
     [InlineData("stick",         ThrottleBrakeMode.Stick)]
     [InlineData("buttons",       ThrottleBrakeMode.Buttons)]
+    [InlineData("pedal_stick",   ThrottleBrakeMode.PedalStick)]
     [InlineData("pedal_buttons", ThrottleBrakeMode.PedalButtons)]
     [InlineData("pedal_tilt",    ThrottleBrakeMode.PedalTilt)]
     [InlineData("none",          ThrottleBrakeMode.None)]
-    [InlineData("garbage",       ThrottleBrakeMode.PedalTilt)]  // fall back to new default
+    [InlineData("garbage",       ThrottleBrakeMode.PedalStick)]  // fall back to new default
     public void Mode_ParsesAllValues(string ini, ThrottleBrakeMode expected)
     {
         var path = WriteTempIni($"[throttle_brake]\nmode = {ini}\n");
@@ -80,8 +81,9 @@ public class PedalConfigTests
     }
 
     [Fact]
-    public void PedalsEnabled_ReturnsTrue_ForRightModes()
+    public void PedalsEnabled_ReturnsTrue_ForAllPedalModes()
     {
+        Assert.True(PedalsConfigHelper.RequiresPedalJoyCon(ThrottleBrakeMode.PedalStick));
         Assert.True(PedalsConfigHelper.RequiresPedalJoyCon(ThrottleBrakeMode.PedalButtons));
         Assert.True(PedalsConfigHelper.RequiresPedalJoyCon(ThrottleBrakeMode.PedalTilt));
         Assert.False(PedalsConfigHelper.RequiresPedalJoyCon(ThrottleBrakeMode.Stick));
