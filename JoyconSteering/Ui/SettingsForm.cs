@@ -33,7 +33,9 @@ internal sealed class SettingsForm : Form
     // Pedal joy-con (the other one — opposite to the steering side)
     private readonly ComboBox _pedalThrottleBtn = new();
     private readonly ComboBox _pedalBrakeBtn    = new();
-    private readonly ComboBox _pedalTiltAxis    = new();
+    private readonly RadioButton _pedalModeWheel = new() { Text = "Wheel — gyro integration", AutoSize = true };
+    private readonly RadioButton _pedalModeTilt  = new() { Text = "Tilt — gravity-anchored", AutoSize = true };
+    private readonly ComboBox _pedalAxisAdvanced = new();
     private readonly NumericUpDown _pedalTiltRange    = NewNum(5,  90, 1);
     private readonly NumericUpDown _pedalTiltDeadzone = NewNum(0,  30, 1);
     private readonly CheckBox _pedalTiltInvert        = new() { Text = "Invert pedal tilt direction" };
@@ -65,8 +67,8 @@ internal sealed class SettingsForm : Form
         _axisAdvanced.Items.AddRange(new object[] { "(use mode above)", "roll", "pitch", "yaw" });
         _tbMode.Items.AddRange(new object[] { "stick", "buttons", "pedal_buttons", "pedal_tilt", "none" });
         _recenter.Items.AddRange(ButtonNames.Cast<object>().Append("none").ToArray());
-        _pedalTiltAxis.Items.AddRange(new object[] { "auto", "wheel", "tilt", "roll", "pitch", "yaw" });
-        foreach (var combo in new[] { _side, _axisAdvanced, _tbMode, _recenter, _pedalThrottleBtn, _pedalBrakeBtn, _pedalTiltAxis, _pedalRecenter })
+        _pedalAxisAdvanced.Items.AddRange(new object[] { "(use mode above)", "roll", "pitch", "yaw" });
+        foreach (var combo in new[] { _side, _axisAdvanced, _tbMode, _recenter, _pedalThrottleBtn, _pedalBrakeBtn, _pedalAxisAdvanced, _pedalRecenter })
             combo.DropDownStyle = ComboBoxStyle.DropDownList;
 
         // Pedal button dropdowns are side-aware (populated from the OPPOSITE joy-con's buttons).
@@ -201,11 +203,37 @@ internal sealed class SettingsForm : Form
 
         AddPair(grid, "  Throttle button:",     _pedalThrottleBtn);
         AddPair(grid, "  Brake button:",        _pedalBrakeBtn);
-        AddPair(grid, "  Tilt axis:",           _pedalTiltAxis);
+
+        // Pedal mode radio group — mirrors steering's Wheel/Tilt selector
+        var pedalModePanel = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.TopDown,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            WrapContents = false,
+        };
+        _pedalModeWheel.Margin = new Padding(0, 2, 0, 2);
+        _pedalModeTilt.Margin  = new Padding(0, 2, 0, 2);
+        pedalModePanel.Controls.Add(_pedalModeWheel);
+        pedalModePanel.Controls.Add(_pedalModeTilt);
+        AddPair(grid, "  Pedal tilt mode:", pedalModePanel);
+        AddPair(grid, "    Advanced axis:", _pedalAxisAdvanced);
+
         AddPair(grid, "  Tilt full range (°):", _pedalTiltRange);
         AddPair(grid, "  Tilt deadzone (°):",   _pedalTiltDeadzone);
         AddPair(grid, "", _pedalTiltInvert);
         AddPair(grid, "  Tilt recenter button:", _pedalRecenter);
+
+        _pedalModeWheel.CheckedChanged += (s, e) => { if (_pedalModeWheel.Checked) _pedalAxisAdvanced.SelectedIndex = 0; };
+        _pedalModeTilt.CheckedChanged  += (s, e) => { if (_pedalModeTilt.Checked)  _pedalAxisAdvanced.SelectedIndex = 0; };
+        _pedalAxisAdvanced.SelectedIndexChanged += (s, e) =>
+        {
+            if (_pedalAxisAdvanced.SelectedIndex > 0)
+            {
+                _pedalModeWheel.Checked = false;
+                _pedalModeTilt.Checked = false;
+            }
+        };
 
         var help = new Label
         {
@@ -371,8 +399,12 @@ internal sealed class SettingsForm : Form
                 _modeTilt.Checked = false;
                 _axisAdvanced.SelectedItem = "yaw";
                 break;
-            default: // Auto and Wheel both → Wheel mode
+            case SteeringAxis.Wheel:
                 _modeWheel.Checked = true;
+                _axisAdvanced.SelectedIndex = 0;
+                break;
+            default: // Auto → Tilt (the new default)
+                _modeTilt.Checked = true;
                 _axisAdvanced.SelectedIndex = 0;
                 break;
         }
@@ -390,7 +422,25 @@ internal sealed class SettingsForm : Form
         SetComboIfPresent(_pedalThrottleBtn, cfg.PedalThrottleButton);
         SetComboIfPresent(_pedalBrakeBtn,    cfg.PedalBrakeButton);
         SetComboIfPresent(_pedalRecenter,    cfg.PedalRecenterButton);
-        _pedalTiltAxis.SelectedItem = cfg.PedalTiltAxis.ToString().ToLowerInvariant();
+
+        // Pedal axis: same mode-resolution as steering — auto and tilt → Tilt radio,
+        // wheel → Wheel radio, roll/pitch/yaw → advanced.
+        switch (cfg.PedalTiltAxis)
+        {
+            case SteeringAxis.Wheel:
+                _pedalModeWheel.Checked = true; _pedalAxisAdvanced.SelectedIndex = 0; break;
+            case SteeringAxis.Roll:
+                _pedalModeWheel.Checked = false; _pedalModeTilt.Checked = false;
+                _pedalAxisAdvanced.SelectedItem = "roll"; break;
+            case SteeringAxis.Pitch:
+                _pedalModeWheel.Checked = false; _pedalModeTilt.Checked = false;
+                _pedalAxisAdvanced.SelectedItem = "pitch"; break;
+            case SteeringAxis.Yaw:
+                _pedalModeWheel.Checked = false; _pedalModeTilt.Checked = false;
+                _pedalAxisAdvanced.SelectedItem = "yaw"; break;
+            default: // Auto and Tilt → Tilt radio
+                _pedalModeTilt.Checked = true; _pedalAxisAdvanced.SelectedIndex = 0; break;
+        }
         _pedalTiltRange.Value    = (decimal)Math.Clamp(cfg.PedalTiltRangeDegrees, 5, 90);
         _pedalTiltDeadzone.Value = (decimal)Math.Clamp(cfg.PedalTiltDeadzoneDegrees, 0, 30);
         _pedalTiltInvert.Checked = cfg.PedalTiltInvert;
@@ -428,6 +478,15 @@ internal sealed class SettingsForm : Form
         return "auto";
     }
 
+    private string ResolvePedalAxis()
+    {
+        if (_pedalAxisAdvanced.SelectedIndex > 0 && _pedalAxisAdvanced.SelectedItem is string adv)
+            return adv;
+        if (_pedalModeTilt.Checked) return "tilt";
+        if (_pedalModeWheel.Checked) return "wheel";
+        return "auto";
+    }
+
     private void OnSave()
     {
         try
@@ -453,7 +512,7 @@ internal sealed class SettingsForm : Form
 
             updates[("pedal_buttons", "throttle")] = _pedalThrottleBtn.SelectedItem?.ToString() ?? "zr";
             updates[("pedal_buttons", "brake")]    = _pedalBrakeBtn.SelectedItem?.ToString() ?? "r";
-            updates[("pedal_tilt", "axis")]             = _pedalTiltAxis.SelectedItem?.ToString() ?? "auto";
+            updates[("pedal_tilt", "axis")]             = ResolvePedalAxis();
             updates[("pedal_tilt", "range_degrees")]    = _pedalTiltRange.Value.ToString(CultureInfo.InvariantCulture);
             updates[("pedal_tilt", "deadzone_degrees")] = _pedalTiltDeadzone.Value.ToString(CultureInfo.InvariantCulture);
             updates[("pedal_tilt", "invert")]           = _pedalTiltInvert.Checked ? "true" : "false";

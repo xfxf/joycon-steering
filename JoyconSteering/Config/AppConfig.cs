@@ -38,7 +38,7 @@ public sealed record AppConfig
     public double PedalTiltRangeDegrees    { get; init; } = 45;
     public double PedalTiltDeadzoneDegrees { get; init; } = 8;
     public bool   PedalTiltInvert          { get; init; }
-    public string PedalRecenterButton      { get; init; } = "home";
+    public string PedalRecenterButton      { get; init; } = "stick";
 
     public Dictionary<string, int> ButtonMap { get; init; } = new();
     public string RecenterButton { get; init; } = "stick";
@@ -64,14 +64,15 @@ public sealed record AppConfig
             _ => SteeringAxis.Auto,
         };
 
-        var tbStr = ini.GetString("throttle_brake", "mode", "stick").ToLowerInvariant();
+        var tbStr = ini.GetString("throttle_brake", "mode", "pedal_tilt").ToLowerInvariant();
         var tb = tbStr switch
         {
+            "stick" => ThrottleBrakeMode.Stick,
             "buttons" => ThrottleBrakeMode.Buttons,
             "pedal_buttons" => ThrottleBrakeMode.PedalButtons,
             "pedal_tilt" => ThrottleBrakeMode.PedalTilt,
             "none" => ThrottleBrakeMode.None,
-            _ => ThrottleBrakeMode.Stick,
+            _ => ThrottleBrakeMode.PedalTilt,
         };
 
         var pedalAxisStr = ini.GetString("pedal_tilt", "axis", "auto").ToLowerInvariant();
@@ -106,7 +107,7 @@ public sealed record AppConfig
             PedalTiltRangeDegrees    = ini.GetDouble("pedal_tilt", "range_degrees", 45),
             PedalTiltDeadzoneDegrees = ini.GetDouble("pedal_tilt", "deadzone_degrees", 8),
             PedalTiltInvert          = ini.GetBool("pedal_tilt", "invert", false),
-            PedalRecenterButton      = ini.GetString("pedal_tilt", "recenter_button", "home").ToLowerInvariant(),
+            PedalRecenterButton      = ini.GetString("pedal_tilt", "recenter_button", "stick").ToLowerInvariant(),
             ButtonMap = buttonMap,
             RecenterButton = ini.GetString("recenter", "button", "stick").ToLowerInvariant(),
             AutoRecenterIdleSeconds = ini.GetDouble("recenter", "auto_recenter_idle_seconds", 0),

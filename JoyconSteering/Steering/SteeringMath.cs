@@ -80,8 +80,10 @@ public static class SteeringAxisSelector
             JoyconSteering.Config.SteeringAxis.Yaw => SelectedAxis.Yaw,
             JoyconSteering.Config.SteeringAxis.Wheel => SelectedAxis.Wheel,
             JoyconSteering.Config.SteeringAxis.Tilt => SelectedAxis.Tilt,
-            // Auto: body-frame Z rotation. Tilt-invariant, unbounded (no ±180° wrap),
-            // works when the controller is mounted at an angle in a wheel grip.
-            _ => SelectedAxis.Wheel,
+            // Auto: gravity-anchored tilt — drift-free and unwrapped past ±180°.
+            // The previous default was Wheel (gyro integration), but tilt holds the
+            // centre rock-solid across a long session in exchange for a slightly
+            // softer feel near full lock. Better default for most users.
+            _ => SelectedAxis.Tilt,
         };
 }

@@ -18,7 +18,7 @@ public class PedalConfigTests
     [InlineData("pedal_buttons", ThrottleBrakeMode.PedalButtons)]
     [InlineData("pedal_tilt",    ThrottleBrakeMode.PedalTilt)]
     [InlineData("none",          ThrottleBrakeMode.None)]
-    [InlineData("garbage",       ThrottleBrakeMode.Stick)]  // fall back to default
+    [InlineData("garbage",       ThrottleBrakeMode.PedalTilt)]  // fall back to new default
     public void Mode_ParsesAllValues(string ini, ThrottleBrakeMode expected)
     {
         var path = WriteTempIni($"[throttle_brake]\nmode = {ini}\n");
@@ -57,7 +57,7 @@ public class PedalConfigTests
         Assert.Equal(45.0, cfg.PedalTiltRangeDegrees);
         Assert.Equal(8.0,  cfg.PedalTiltDeadzoneDegrees);
         Assert.False(cfg.PedalTiltInvert);
-        Assert.Equal("home", cfg.PedalRecenterButton);
+        Assert.Equal("stick", cfg.PedalRecenterButton);
     }
 
     [Fact]

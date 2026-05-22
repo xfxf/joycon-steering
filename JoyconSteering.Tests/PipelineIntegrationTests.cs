@@ -26,7 +26,9 @@ public class PipelineIntegrationTests
     {
         Side = JoyConSide.Left,
         VJoyDeviceId = 1,
-        Axis = SteeringAxis.Auto,
+        // Tests below feed gyro Z and expect wheel-axis behaviour; pin explicitly
+        // to Wheel rather than Auto (which now resolves to Tilt).
+        Axis = SteeringAxis.Wheel,
         RangeDegrees = 90,
         DeadzoneDegrees = 0,
         SmoothingMs = 0,

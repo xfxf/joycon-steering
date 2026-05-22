@@ -111,7 +111,9 @@ public sealed class PedalJoyConWorker : IDisposable
     {
         var biasCal = new GyroBiasCalibrator();
         var fusion = new MadgwickFilter(config.MadgwickBeta);
+        var wheel = new WheelAxisIntegrator();
         var tilt = new GravityTiltAxis();
+        var pedalAxis = SteeringAxisSelector.Resolve(config.PedalTiltAxis, pedalSide);
         var pedalSettings = new TiltPedalSettings(
             RangeDegrees: config.PedalTiltRangeDegrees,
             DeadzoneDegrees: config.PedalTiltDeadzoneDegrees,
@@ -119,6 +121,7 @@ public sealed class PedalJoyConWorker : IDisposable
         var recenterBtn = config.PedalRecenterButton;
         bool prevRecenterPressed = false;
         bool calibratedLogged = false;
+        Logger.Info($"Pedal axis = {pedalAxis}");
 
         while (!token.IsCancellationRequested)
         {
@@ -179,8 +182,14 @@ public sealed class PedalJoyConWorker : IDisposable
             fusion.Update(bs0, SampleDtSeconds);
             fusion.Update(bs1, SampleDtSeconds);
             fusion.Update(bs2, SampleDtSeconds);
+            wheel.Apply(bs0, SampleDtSeconds);
+            wheel.Apply(bs1, SampleDtSeconds);
+            wheel.Apply(bs2, SampleDtSeconds);
             var (gx, gy, _) = fusion.GravityInBody();
             tilt.Update(gx, gy);
+
+            var (roll, pitch, yaw) = fusion.GetEulerDegrees();
+            double angle = AngleSource.Pick(pedalAxis, roll, pitch, yaw, wheel.AngleDegrees, tilt.AngleDegrees);
 
             // Recenter on rising edge of pedal-specific recenter button OR external request
             bool external;
@@ -188,7 +197,8 @@ public sealed class PedalJoyConWorker : IDisposable
             if ((recenterPressed && !prevRecenterPressed) || external)
             {
                 tilt.SetNeutral();
-                Logger.Info($"Pedal recenter at tilt angle {tilt.AngleDegrees:F1}°");
+                wheel.Reset();
+                Logger.Info($"Pedal recenter (axis={pedalAxis}, current angle={angle:F1}°)");
             }
             prevRecenterPressed = recenterPressed;
 
@@ -201,7 +211,7 @@ public sealed class PedalJoyConWorker : IDisposable
                     brake    = brakePressed    ? 1.0 : 0.0;
                     break;
                 case ThrottleBrakeMode.PedalTilt:
-                    (throttle, brake) = TiltPedalMath.Compute(tilt.AngleDegrees, pedalSettings);
+                    (throttle, brake) = TiltPedalMath.Compute(angle, pedalSettings);
                     break;
             }
 
@@ -212,7 +222,7 @@ public sealed class PedalJoyConWorker : IDisposable
                     Connected: true,
                     Throttle: throttle,
                     Brake: brake,
-                    TiltAngleDeg: tilt.AngleDegrees,
+                    TiltAngleDeg: angle,
                     BatteryPercent: JoyConBattery.Percent(batRaw),
                     ErrorMessage: null);
             }
