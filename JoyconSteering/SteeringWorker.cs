@@ -7,6 +7,32 @@ using JoyconSteering.Steering;
 
 namespace JoyconSteering;
 
+/// <summary>
+/// A side-agnostic frame from the steering Joy-Con. Buttons are stored as the raw
+/// flag word; <see cref="JoyConSideButtons"/> resolves config names against the
+/// appropriate enum depending on the configured steering side.
+/// </summary>
+internal readonly record struct UnifiedJoyConFrame(
+    uint RawButtons,
+    double StickX, double StickY,
+    int Battery, byte Timer,
+    ImuSample Sample0, ImuSample Sample1, ImuSample Sample2)
+{
+    public static UnifiedJoyConFrame Read(JoyConDevice jc, Config.JoyConSide side)
+    {
+        if (side == Config.JoyConSide.Left)
+        {
+            var s = jc.Read();
+            return new UnifiedJoyConFrame((uint)s.Buttons, s.StickX, s.StickY, s.Battery, s.Timer, s.Sample0, s.Sample1, s.Sample2);
+        }
+        else
+        {
+            var s = jc.ReadAsRight();
+            return new UnifiedJoyConFrame((uint)s.Buttons, s.StickX, s.StickY, s.Battery, s.Timer, s.Sample0, s.Sample1, s.Sample2);
+        }
+    }
+}
+
 /// <summary>Snapshot of the worker's current state for the UI to display.</summary>
 public sealed record WorkerStatus(
     bool Running,
@@ -195,7 +221,7 @@ public sealed class SteeringWorker : IDisposable
         var steering = new SteeringMath(new SteeringSettings(
             config.RangeDegrees, config.DeadzoneDegrees, config.SmoothingMs, config.Invert));
         var mapper = new WheelOutputMapper(config);
-        var recenterButton = JoyConButtonNames.FromName(config.RecenterButton);
+        uint recenterBit = JoyConSideButtons.NameToBit(config.Side, config.RecenterButton);
         var edge = new RisingEdgeDetector();
         bool wasCalibrated = false;
         Logger.Info($"Steering axis = {axis}. Calibrating gyro — hold still for ~1 s…");
@@ -221,8 +247,8 @@ public sealed class SteeringWorker : IDisposable
 
         while (!token.IsCancellationRequested)
         {
-            JoyConState state;
-            try { state = jc.Read(); }
+            UnifiedJoyConFrame state;
+            try { state = UnifiedJoyConFrame.Read(jc, config.Side); }
             catch (TimeoutException) { continue; }
 
             bool recalNow;
@@ -273,11 +299,7 @@ public sealed class SteeringWorker : IDisposable
             // Continuous bias refinement: when the controller is held still, slowly
             // pull the gyro bias toward the current reading. Catches thermal drift
             // without requiring a full recalibration.
-            double peakMag = Math.Max(Math.Max(
-                Math.Sqrt(s0.GxDps * s0.GxDps + s0.GyDps * s0.GyDps + s0.GzDps * s0.GzDps),
-                Math.Sqrt(s1.GxDps * s1.GxDps + s1.GyDps * s1.GyDps + s1.GzDps * s1.GzDps)),
-                Math.Sqrt(s2.GxDps * s2.GxDps + s2.GyDps * s2.GyDps + s2.GzDps * s2.GzDps));
-            if (peakMag < biasRefinementThresholdDps)
+            if (GyroStationary.IsStationary(s0, s1, s2, biasRefinementThresholdDps))
             {
                 biasCal.UpdateRunning(state.Sample0);
                 biasCal.UpdateRunning(state.Sample1);
@@ -301,8 +323,8 @@ public sealed class SteeringWorker : IDisposable
             var (roll, pitch, yaw) = fusion.GetEulerDegrees();
             double angle = AngleSource.Pick(axis, roll, pitch, yaw, wheel.AngleDegrees, tilt.AngleDegrees);
 
-            bool recenterEdge = recenterButton != LeftJoyConButton.None
-                                && edge.Update(state.Buttons.HasFlag(recenterButton));
+            bool recenterEdge = recenterBit != 0
+                                && edge.Update((state.RawButtons & recenterBit) != 0);
             bool externalRecenter;
             lock (_gate)
             {
@@ -355,7 +377,7 @@ public sealed class SteeringWorker : IDisposable
             (double, double)? externalPedals = null;
             if (PedalsConfigHelper.RequiresPedalJoyCon(config.ThrottleBrake))
                 externalPedals = _pedals.CurrentPedals;
-            mapper.Apply(steer, state, vjoy, externalPedals);
+            mapper.Apply(steer, state.StickX, state.StickY, state.RawButtons, vjoy, externalPedals);
 
             int batPct = JoyConBattery.Percent(state.Battery);
             bool charging = JoyConBattery.IsCharging(state.Battery);

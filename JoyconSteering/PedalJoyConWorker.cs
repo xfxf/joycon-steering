@@ -33,7 +33,6 @@ public sealed class PedalJoyConWorker : IDisposable
     private CancellationTokenSource? _cts;
     private Task? _task;
     private PedalWorkerStatus _status = PedalWorkerStatus.Stopped;
-    private bool _recenterRequested;
 
     public PedalWorkerStatus Status { get { lock (_gate) return _status; } }
 
@@ -42,15 +41,16 @@ public sealed class PedalJoyConWorker : IDisposable
         get { lock (_gate) return (_status.Throttle, _status.Brake); }
     }
 
-    public void Recenter() { lock (_gate) _recenterRequested = true; }
-
     public void Start(AppConfig config)
     {
         Stop();
         lock (_gate)
         {
             _cts = new CancellationTokenSource();
-            _status = _status with { Running = true };
+            // Mark Running here so the UI shows "waiting…" rather than "not in use"
+            // while the worker is trying to acquire the pedal Joy-Con. Connected is
+            // only set true once the device actually opens.
+            _status = PedalWorkerStatus.Stopped with { Running = true };
             var ct = _cts.Token;
             _task = Task.Run(() => Run(config, ct), ct);
         }
@@ -89,7 +89,10 @@ public sealed class PedalJoyConWorker : IDisposable
             catch (OperationCanceledException) { return; }
             catch (Exception ex) when (ex is IOException or TimeoutException or InvalidOperationException)
             {
-                Logger.Warn($"Pedal Joy-Con link lost: {ex.Message}. Retrying in 3 s…");
+                // Expected transient: device missing, BT drop, sleep. Log type so the
+                // log shows whether we're losing the device vs. failing inside the read
+                // loop — if a deeper bug starts throwing IOException, we'll see it.
+                Logger.Warn($"Pedal Joy-Con link lost ({ex.GetType().Name}): {ex.Message}. Retrying in 3 s…");
                 lock (_gate)
                 {
                     _status = _status with
@@ -171,11 +174,7 @@ public sealed class PedalJoyConWorker : IDisposable
             }
 
             // Continuous bias refinement when still
-            double peakMag = Math.Max(Math.Max(
-                Math.Sqrt(bs0.GxDps * bs0.GxDps + bs0.GyDps * bs0.GyDps + bs0.GzDps * bs0.GzDps),
-                Math.Sqrt(bs1.GxDps * bs1.GxDps + bs1.GyDps * bs1.GyDps + bs1.GzDps * bs1.GzDps)),
-                Math.Sqrt(bs2.GxDps * bs2.GxDps + bs2.GyDps * bs2.GyDps + bs2.GzDps * bs2.GzDps));
-            if (peakMag < BiasRefinementThresholdDps)
+            if (GyroStationary.IsStationary(bs0, bs1, bs2, BiasRefinementThresholdDps))
             {
                 biasCal.UpdateRunning(s0);
                 biasCal.UpdateRunning(s1);
@@ -194,10 +193,8 @@ public sealed class PedalJoyConWorker : IDisposable
             var (roll, pitch, yaw) = fusion.GetEulerDegrees();
             double angle = AngleSource.Pick(pedalAxis, roll, pitch, yaw, wheel.AngleDegrees, tilt.AngleDegrees);
 
-            // Recenter on rising edge of pedal-specific recenter button OR external request
-            bool external;
-            lock (_gate) { external = _recenterRequested; _recenterRequested = false; }
-            if ((recenterPressed && !prevRecenterPressed) || external)
+            // Recenter on rising edge of the configured pedal recenter button.
+            if (recenterPressed && !prevRecenterPressed)
             {
                 tilt.SetNeutral();
                 wheel.Reset();

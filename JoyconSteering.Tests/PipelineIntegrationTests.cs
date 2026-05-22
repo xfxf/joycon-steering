@@ -80,7 +80,7 @@ public class PipelineIntegrationTests
         var angle0 = AngleSource.Pick(axis, r0, p0, y0, wheelInt.AngleDegrees, 0);
         if (edge.Update(true)) steering.Recenter(angle0);
         var out0 = steering.Compute(angle0, 16);
-        mapper.Apply(out0, levelState, sink);
+        mapper.Apply(out0, levelState.StickX, levelState.StickY, (uint)levelState.Buttons, sink);
         Assert.Equal(0.0, sink.Steering, 2);
 
         // Phase 2: rotate at 45 dps around body Z for 1 second → 45° wheel rotation.
@@ -95,7 +95,7 @@ public class PipelineIntegrationTests
         var (r, p, y) = fusion.GetEulerDegrees();
         var angle = AngleSource.Pick(axis, r, p, y, wheelInt.AngleDegrees, 0);
         var output = steering.Compute(angle, 16);
-        mapper.Apply(output, rotState, sink);
+        mapper.Apply(output, rotState.StickX, rotState.StickY, (uint)rotState.Buttons, sink);
 
         Assert.InRange(sink.Steering, 0.4, 0.6);
     }
@@ -118,7 +118,7 @@ public class PipelineIntegrationTests
 
         Assert.InRange(wheelInt.AngleDegrees, 265, 275); // unbounded, no wrap
         var output = steering.Compute(wheelInt.AngleDegrees, 16);
-        mapper.Apply(output, rotState, sink);
+        mapper.Apply(output, rotState.StickX, rotState.StickY, (uint)rotState.Buttons, sink);
         Assert.Equal(1.0, sink.Steering, 2); // clamped, not wrapped
     }
 
@@ -129,7 +129,8 @@ public class PipelineIntegrationTests
         var mapper = new WheelOutputMapper(cfg);
         var sink = new FakeWheelOutput();
 
-        mapper.Apply(0.0, State(stickY: 0.575), sink); // 0.5 throttle after 0.15 deadzone
+        var st = State(stickY: 0.575);
+        mapper.Apply(0.0, st.StickX, st.StickY, (uint)st.Buttons, sink); // 0.5 throttle after 0.15 deadzone
         Assert.Equal(0.5, sink.Throttle, 2);
         Assert.Equal(0.0, sink.Brake);
     }
@@ -141,7 +142,8 @@ public class PipelineIntegrationTests
         var mapper = new WheelOutputMapper(cfg);
         var sink = new FakeWheelOutput();
 
-        mapper.Apply(0.0, State(buttons: LeftJoyConButton.Up | LeftJoyConButton.Capture), sink);
+        var st = State(buttons: LeftJoyConButton.Up | LeftJoyConButton.Capture);
+        mapper.Apply(0.0, st.StickX, st.StickY, (uint)st.Buttons, sink);
         Assert.True(sink.Buttons[1]);   // up → vJoy 1
         Assert.True(sink.Buttons[11]);  // capture → vJoy 11
         Assert.False(sink.Buttons[2]);  // down not pressed
@@ -162,7 +164,7 @@ public class PipelineIntegrationTests
         var state = InputReportParser.ParseStandard(buf, isLeft: true);
         var cfg = DefaultConfig() with { ThrottleBrake = ThrottleBrakeMode.Buttons };
         var sink = new FakeWheelOutput();
-        new WheelOutputMapper(cfg).Apply(0.0, state, sink);
+        new WheelOutputMapper(cfg).Apply(0.0, state.StickX, state.StickY, (uint)state.Buttons, sink);
 
         Assert.True(sink.Buttons[5]); // L → vJoy 5
         Assert.Equal(1.0, sink.Throttle); // L = throttle in buttons mode
@@ -179,7 +181,8 @@ public class PipelineIntegrationTests
         // Jump straight to 45° physical angle in one tick: smoothed output should NOT
         // immediately read 0.5; it should be smaller and converge over many ticks.
         var first = steering.Compute(45, 16);
-        mapper.Apply(first, State(), sink);
+        var st = State();
+        mapper.Apply(first, st.StickX, st.StickY, (uint)st.Buttons, sink);
         Assert.True(sink.Steering < 0.5);
         Assert.True(sink.Steering > 0.0);
 
@@ -187,7 +190,7 @@ public class PipelineIntegrationTests
         for (int i = 0; i < 50; i++)
         {
             final = steering.Compute(45, 16);
-            mapper.Apply(final, State(), sink);
+            mapper.Apply(final, st.StickX, st.StickY, (uint)st.Buttons, sink);
         }
         Assert.Equal(0.5, sink.Steering, 1);
     }

@@ -88,13 +88,18 @@ internal sealed class SettingsForm : Form
         _axisAdvanced.Items.AddRange(new object[] { "(use mode above)", "roll", "pitch", "yaw" });
         _tbMode.Items.AddRange(_modeOptions.Cast<object>().ToArray());
         _stickAxis.Items.AddRange(new object[] { "y (up = throttle)", "x (right = throttle)" });
-        _recenter.Items.AddRange(ButtonNames.Cast<object>().Append("none").ToArray());
+        // _recenter is populated by RepopulateSteeringRecenterDropdown based on _side
         _pedalAxisAdvanced.Items.AddRange(new object[] { "(use mode above)", "roll", "pitch", "yaw" });
         foreach (var combo in new[] { _side, _axisAdvanced, _tbMode, _stickAxis, _recenter, _pedalThrottleBtn, _pedalBrakeBtn, _pedalAxisAdvanced, _pedalRecenter })
             combo.DropDownStyle = ComboBoxStyle.DropDownList;
 
-        // Pedal button dropdowns are side-aware (populated from the OPPOSITE joy-con's buttons).
-        _side.SelectedIndexChanged += (s, e) => RepopulatePedalButtonDropdowns();
+        // Both the steering recenter dropdown (steering side's buttons) and the pedal
+        // button dropdowns (OPPOSITE side's buttons) are side-aware.
+        _side.SelectedIndexChanged += (s, e) =>
+        {
+            RepopulateSteeringRecenterDropdown();
+            RepopulatePedalButtonDropdowns();
+        };
         _modeWheel.CheckedChanged += (s, e) => { if (_modeWheel.Checked) _axisAdvanced.SelectedIndex = 0; };
         _modeTilt.CheckedChanged += (s, e) => { if (_modeTilt.Checked) _axisAdvanced.SelectedIndex = 0; };
         _axisAdvanced.SelectedIndexChanged += (s, e) =>
@@ -280,6 +285,19 @@ internal sealed class SettingsForm : Form
         return tab;
     }
 
+    private void RepopulateSteeringRecenterDropdown()
+    {
+        var steeringIsLeft = (_side.SelectedItem?.ToString() ?? "left") == "left";
+        var buttons = steeringIsLeft ? LeftButtonNames : RightButtonNames;
+        var previous = _recenter.SelectedItem?.ToString();
+        _recenter.Items.Clear();
+        _recenter.Items.AddRange(buttons.Cast<object>().Append("none").ToArray());
+        if (previous is not null && _recenter.Items.Contains(previous))
+            _recenter.SelectedItem = previous;
+        else if (_recenter.Items.Count > 0)
+            _recenter.SelectedIndex = 0;
+    }
+
     private void RepopulatePedalButtonDropdowns()
     {
         // Pedal joy-con = the OPPOSITE side of whatever's selected for steering.
@@ -399,6 +417,7 @@ internal sealed class SettingsForm : Form
     private void LoadFrom(AppConfig cfg)
     {
         _side.SelectedItem = cfg.Side.ToString().ToLowerInvariant();
+        RepopulateSteeringRecenterDropdown();
         RepopulatePedalButtonDropdowns();
         _vjoyId.Value = cfg.VJoyDeviceId;
 
