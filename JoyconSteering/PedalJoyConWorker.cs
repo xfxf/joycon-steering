@@ -121,9 +121,30 @@ public sealed class PedalJoyConWorker : IDisposable
             RangeDegrees: config.PedalTiltRangeDegrees,
             DeadzoneDegrees: config.PedalTiltDeadzoneDegrees,
             Invert: config.PedalTiltInvert);
-        var recenterBtn = config.PedalRecenterButton;
         bool prevRecenterPressed = false;
         bool calibratedLogged = false;
+
+        // Pre-resolve button names once — config doesn't change during the worker's life,
+        // and we don't want a string switch on every IMU packet (100 Hz hot path).
+        // Use side-tagged sentinels: zero on the wrong side, the appropriate enum bit
+        // on the right side. RightJoyCon / LeftJoyCon enums share the uint underlying
+        // type so we keep both in scope and pick at the dev.Read() / dev.ReadAsRight()
+        // dispatch below.
+        RightJoyConButton throttleBtnR = RightJoyConButton.None, brakeBtnR = RightJoyConButton.None, recenterBtnR = RightJoyConButton.None;
+        LeftJoyConButton  throttleBtnL = LeftJoyConButton.None,  brakeBtnL  = LeftJoyConButton.None,  recenterBtnL  = LeftJoyConButton.None;
+        if (pedalSide == JoyConSide.Right)
+        {
+            throttleBtnR = RightJoyConButtonNames.FromName(config.PedalThrottleButton);
+            brakeBtnR    = RightJoyConButtonNames.FromName(config.PedalBrakeButton);
+            recenterBtnR = RightJoyConButtonNames.FromName(config.PedalRecenterButton);
+        }
+        else
+        {
+            throttleBtnL = JoyConButtonNames.FromName(config.PedalThrottleButton);
+            brakeBtnL    = JoyConButtonNames.FromName(config.PedalBrakeButton);
+            recenterBtnL = JoyConButtonNames.FromName(config.PedalRecenterButton);
+        }
+
         Logger.Info($"Pedal axis = {pedalAxis}");
 
         while (!token.IsCancellationRequested)
@@ -141,12 +162,9 @@ public sealed class PedalJoyConWorker : IDisposable
                 stickAxisValue = config.StickAxis == StickAxis.X ? st.StickX : st.StickY;
                 s0 = st.Sample0; s1 = st.Sample1; s2 = st.Sample2;
 
-                var throttleBtn = RightJoyConButtonNames.FromName(config.PedalThrottleButton);
-                var brakeBtn    = RightJoyConButtonNames.FromName(config.PedalBrakeButton);
-                var recenter    = RightJoyConButtonNames.FromName(recenterBtn);
-                throttlePressed = throttleBtn != RightJoyConButton.None && st.Buttons.HasFlag(throttleBtn);
-                brakePressed    = brakeBtn    != RightJoyConButton.None && st.Buttons.HasFlag(brakeBtn);
-                recenterPressed = recenter    != RightJoyConButton.None && st.Buttons.HasFlag(recenter);
+                throttlePressed = throttleBtnR != RightJoyConButton.None && st.Buttons.HasFlag(throttleBtnR);
+                brakePressed    = brakeBtnR    != RightJoyConButton.None && st.Buttons.HasFlag(brakeBtnR);
+                recenterPressed = recenterBtnR != RightJoyConButton.None && st.Buttons.HasFlag(recenterBtnR);
             }
             else
             {
@@ -155,12 +173,9 @@ public sealed class PedalJoyConWorker : IDisposable
                 stickAxisValue = config.StickAxis == StickAxis.X ? st.StickX : st.StickY;
                 s0 = st.Sample0; s1 = st.Sample1; s2 = st.Sample2;
 
-                var throttleBtn = JoyConButtonNames.FromName(config.PedalThrottleButton);
-                var brakeBtn    = JoyConButtonNames.FromName(config.PedalBrakeButton);
-                var recenter    = JoyConButtonNames.FromName(recenterBtn);
-                throttlePressed = throttleBtn != LeftJoyConButton.None && st.Buttons.HasFlag(throttleBtn);
-                brakePressed    = brakeBtn    != LeftJoyConButton.None && st.Buttons.HasFlag(brakeBtn);
-                recenterPressed = recenter    != LeftJoyConButton.None && st.Buttons.HasFlag(recenter);
+                throttlePressed = throttleBtnL != LeftJoyConButton.None && st.Buttons.HasFlag(throttleBtnL);
+                brakePressed    = brakeBtnL    != LeftJoyConButton.None && st.Buttons.HasFlag(brakeBtnL);
+                recenterPressed = recenterBtnL != LeftJoyConButton.None && st.Buttons.HasFlag(recenterBtnL);
             }
 
             // Bias cal + fusion + tilt

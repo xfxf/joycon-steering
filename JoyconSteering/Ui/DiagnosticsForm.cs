@@ -192,15 +192,20 @@ internal sealed class DiagnosticsForm : Form
         _throttleBar.Value  = throttle;
         _brakeBar.Value     = brake;
 
-        if (!p.Running) {
+        if (!p.Running)
+        {
             _pedalStatusLabel.Text = "not in use";
             _pedalStatusLabel.ForeColor = Color.DimGray;
             _pedalValuesLabel.Text = "—";
-        } else if (p.ErrorMessage is not null || !p.Connected) {
+        }
+        else if (p.ErrorMessage is not null || !p.Connected)
+        {
             _pedalStatusLabel.Text = "waiting…";
             _pedalStatusLabel.ForeColor = Color.DarkOrange;
             _pedalValuesLabel.Text = p.ErrorMessage ?? "disconnected";
-        } else {
+        }
+        else
+        {
             _pedalStatusLabel.Text = $"Connected  bat {p.BatteryPercent}%";
             _pedalStatusLabel.ForeColor = Color.ForestGreen;
             _pedalValuesLabel.Text = $"tilt={p.TiltAngleDeg:+0.0;-0.0;0.0}°";

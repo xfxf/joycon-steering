@@ -8,18 +8,23 @@ namespace JoyconSteering.JoyCon.Fusion;
 /// </summary>
 public static class GyroStationary
 {
-    private static double Magnitude(ImuSample s)
-        => Math.Sqrt(s.GxDps * s.GxDps + s.GyDps * s.GyDps + s.GzDps * s.GzDps);
+    private static double MagnitudeSquared(ImuSample s)
+        => s.GxDps * s.GxDps + s.GyDps * s.GyDps + s.GzDps * s.GzDps;
 
     /// <summary>
     /// True when the peak gyro magnitude across the three samples is below
     /// <paramref name="thresholdDps"/>. The peak (not the mean) is used so
     /// that a single noisy sample in an otherwise still packet doesn't
     /// trigger a stationary update.
+    ///
+    /// Compares squared magnitudes against the squared threshold so the hot
+    /// path doesn't pay three Math.Sqrt calls per packet.
     /// </summary>
     public static bool IsStationary(ImuSample s0, ImuSample s1, ImuSample s2, double thresholdDps)
     {
-        double peak = Math.Max(Math.Max(Magnitude(s0), Magnitude(s1)), Magnitude(s2));
-        return peak < thresholdDps;
+        double thresholdSq = thresholdDps * thresholdDps;
+        return MagnitudeSquared(s0) < thresholdSq
+            && MagnitudeSquared(s1) < thresholdSq
+            && MagnitudeSquared(s2) < thresholdSq;
     }
 }
