@@ -70,14 +70,29 @@ internal sealed class JoyConDevice : IDisposable
         _stream.Write(_outBuf, 0, _outBuf.Length);
     }
 
-    /// <summary>Block for one input report, parse it, return state. Throws on timeout.</summary>
+    /// <summary>Block for one input report, parse as a left Joy-Con state.</summary>
     public JoyConState Read()
     {
-        int n = _stream.Read(_readBuf, 0, _readBuf.Length);
-        if (n < InputReportParser.ReportSize) throw new IOException($"Short HID read: {n} bytes");
-        if (!InputReportParser.IsStandardReport(_readBuf))
-            return Read(); // skip subcommand replies (0x21) and re-read
+        ReadValidatedReport();
         return InputReportParser.ParseStandard(_readBuf, _isLeft);
+    }
+
+    /// <summary>Block for one input report, parse as a right Joy-Con state.</summary>
+    public RightJoyConState ReadAsRight()
+    {
+        ReadValidatedReport();
+        return InputReportParser.ParseRightStandard(_readBuf);
+    }
+
+    private void ReadValidatedReport()
+    {
+        while (true)
+        {
+            int n = _stream.Read(_readBuf, 0, _readBuf.Length);
+            if (n < InputReportParser.ReportSize) throw new IOException($"Short HID read: {n} bytes");
+            if (InputReportParser.IsStandardReport(_readBuf)) return;
+            // Subcommand reply (0x21) or similar; skip and re-read.
+        }
     }
 
     public void Dispose() => _stream.Dispose();

@@ -30,17 +30,31 @@ internal sealed class SettingsForm : Form
     private readonly NumericUpDown _autoRecenter = NewNum(0.5m, 30, 1);
     private readonly NumericUpDown _beta = NewNum(0.01m, 0.5m, 3);
 
+    // Pedal joy-con (the other one — opposite to the steering side)
+    private readonly ComboBox _pedalThrottleBtn = new();
+    private readonly ComboBox _pedalBrakeBtn    = new();
+    private readonly ComboBox _pedalTiltAxis    = new();
+    private readonly NumericUpDown _pedalTiltRange    = NewNum(5,  90, 1);
+    private readonly NumericUpDown _pedalTiltDeadzone = NewNum(0,  30, 1);
+    private readonly CheckBox _pedalTiltInvert        = new() { Text = "Invert pedal tilt direction" };
+    private readonly ComboBox _pedalRecenter          = new();
+
     private static readonly string[] ButtonNames =
         { "up", "down", "left", "right", "l", "zl", "minus", "stick", "sl", "sr", "capture" };
+    private static readonly string[] LeftButtonNames =
+        { "up", "down", "left", "right", "l", "zl", "minus", "stick", "sl", "sr", "capture" };
+    private static readonly string[] RightButtonNames =
+        { "y", "x", "b", "a", "r", "zr", "plus", "stick", "sl", "sr", "home" };
     private readonly Dictionary<string, NumericUpDown> _buttonInputs = new();
 
     public SettingsForm(string iniPath, AppConfig config)
     {
         _iniPath = iniPath;
         Text = "JoyconSteering — Settings";
-        Width = 560;
-        Height = 560;
-        FormBorderStyle = FormBorderStyle.FixedDialog;
+        Width = 600;
+        Height = 760;
+        FormBorderStyle = FormBorderStyle.Sizable;
+        MinimumSize = new Size(560, 700);
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
@@ -49,10 +63,14 @@ internal sealed class SettingsForm : Form
         // Populate combo box options
         _side.Items.AddRange(new object[] { "left", "right" });
         _axisAdvanced.Items.AddRange(new object[] { "(use mode above)", "roll", "pitch", "yaw" });
-        _tbMode.Items.AddRange(new object[] { "stick", "buttons", "none" });
+        _tbMode.Items.AddRange(new object[] { "stick", "buttons", "pedal_buttons", "pedal_tilt", "none" });
         _recenter.Items.AddRange(ButtonNames.Cast<object>().Append("none").ToArray());
-        foreach (var combo in new[] { _side, _axisAdvanced, _tbMode, _recenter })
+        _pedalTiltAxis.Items.AddRange(new object[] { "auto", "wheel", "tilt", "roll", "pitch", "yaw" });
+        foreach (var combo in new[] { _side, _axisAdvanced, _tbMode, _recenter, _pedalThrottleBtn, _pedalBrakeBtn, _pedalTiltAxis, _pedalRecenter })
             combo.DropDownStyle = ComboBoxStyle.DropDownList;
+
+        // Pedal button dropdowns are side-aware (populated from the OPPOSITE joy-con's buttons).
+        _side.SelectedIndexChanged += (s, e) => RepopulatePedalButtonDropdowns();
         _modeWheel.CheckedChanged += (s, e) => { if (_modeWheel.Checked) _axisAdvanced.SelectedIndex = 0; };
         _modeTilt.CheckedChanged += (s, e) => { if (_modeTilt.Checked) _axisAdvanced.SelectedIndex = 0; };
         _axisAdvanced.SelectedIndexChanged += (s, e) =>
@@ -94,10 +112,16 @@ internal sealed class SettingsForm : Form
         };
         var save = new Button { Text = "Save && Apply", Width = 110, DialogResult = DialogResult.OK };
         var cancel = new Button { Text = "Cancel", Width = 90, DialogResult = DialogResult.Cancel };
-        save.Click += (s, e) => OnSave();
-        cancel.Click += (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+        var reset = new Button { Text = "Reset to defaults", Width = 130 };
+        save.Click  += (s, e) => OnSave();
+        cancel.Click+= (s, e) => { DialogResult = DialogResult.Cancel; Close(); };
+        reset.Click += (s, e) => OnResetToDefaults();
         buttons.Controls.Add(save);
         buttons.Controls.Add(cancel);
+        // Push Reset to the far left
+        var spacer = new Label { Width = 80, Height = 1 };
+        buttons.Controls.Add(spacer);
+        buttons.Controls.Add(reset);
         AcceptButton = save;
         CancelButton = cancel;
 
@@ -160,15 +184,40 @@ internal sealed class SettingsForm : Form
         var grid = NewFormGrid();
         AddPair(grid, "Throttle/Brake mode:", _tbMode);
         AddPair(grid, "Stick deadzone (0-1):", _stickDead);
+
+        // Section separator + label for pedal-joy-con-specific settings
+        var sep = new Label
+        {
+            Text = "── Pedal Joy-Con (the other one — opposite to the steering side) ──",
+            Dock = DockStyle.Fill, AutoSize = false, Height = 24,
+            ForeColor = Color.DimGray, Font = new Font(Font, FontStyle.Italic),
+            TextAlign = ContentAlignment.MiddleLeft,
+            Padding = new Padding(0, 6, 0, 0),
+        };
+        grid.RowCount++;
+        grid.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        grid.Controls.Add(sep, 0, grid.RowCount - 1);
+        grid.SetColumnSpan(sep, 2);
+
+        AddPair(grid, "  Throttle button:",     _pedalThrottleBtn);
+        AddPair(grid, "  Brake button:",        _pedalBrakeBtn);
+        AddPair(grid, "  Tilt axis:",           _pedalTiltAxis);
+        AddPair(grid, "  Tilt full range (°):", _pedalTiltRange);
+        AddPair(grid, "  Tilt deadzone (°):",   _pedalTiltDeadzone);
+        AddPair(grid, "", _pedalTiltInvert);
+        AddPair(grid, "  Tilt recenter button:", _pedalRecenter);
+
         var help = new Label
         {
-            Text = "stick   — left analog stick Y (up = throttle, down = brake)\n" +
-                   "buttons — L = throttle, ZL = brake (digital)\n" +
-                   "none    — disable; bind throttle/brake to keyboard/other device",
-            Dock = DockStyle.Fill,
-            AutoSize = false,
-            ForeColor = Color.Gray,
-            Padding = new Padding(0, 16, 0, 0),
+            Text = "stick         — steering Joy-Con's analog stick Y (up = throttle, down = brake)\n" +
+                   "buttons       — steering Joy-Con's L (throttle) / ZL (brake), digital\n" +
+                   "pedal_buttons — pedal Joy-Con's assignable buttons (digital)\n" +
+                   "pedal_tilt    — pedal Joy-Con's tilt angle (analog, gravity-anchored)\n" +
+                   "none          — disable; bind throttle/brake to keyboard\n\n" +
+                   "Pedal modes require the SECOND Joy-Con to be paired. App still works\n" +
+                   "without it — status will say \"Pedal Joy-Con disconnected\" until paired.",
+            Dock = DockStyle.Fill, AutoSize = false,
+            ForeColor = Color.Gray, Padding = new Padding(0, 16, 0, 0),
         };
         var holder = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 2, ColumnCount = 1 };
         holder.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -177,6 +226,24 @@ internal sealed class SettingsForm : Form
         holder.Controls.Add(help, 0, 1);
         tab.Controls.Add(holder);
         return tab;
+    }
+
+    private void RepopulatePedalButtonDropdowns()
+    {
+        // Pedal joy-con = the OPPOSITE side of whatever's selected for steering.
+        var steeringIsLeft = (_side.SelectedItem?.ToString() ?? "left") == "left";
+        var pedalButtons = steeringIsLeft ? RightButtonNames : LeftButtonNames;
+
+        foreach (var combo in new[] { _pedalThrottleBtn, _pedalBrakeBtn, _pedalRecenter })
+        {
+            var previous = combo.SelectedItem?.ToString();
+            combo.Items.Clear();
+            combo.Items.AddRange(pedalButtons.Cast<object>().ToArray());
+            if (previous is not null && combo.Items.Contains(previous))
+                combo.SelectedItem = previous;
+            else if (combo.Items.Count > 0)
+                combo.SelectedIndex = 0;
+        }
     }
 
     private TabPage BuildButtonsTab()
@@ -250,9 +317,36 @@ internal sealed class SettingsForm : Form
         grid.Controls.Add(control, 1, row);
     }
 
+    private void OnResetToDefaults()
+    {
+        var result = MessageBox.Show(this,
+            "Reset every setting on every tab to defaults?\n\n" +
+            "Nothing is written to disk yet — you'll still need to click Save & Apply for the reset to persist.",
+            "Reset to defaults",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2);
+        if (result != DialogResult.Yes) return;
+
+        // Brand-new defaults are produced by loading an empty INI through AppConfig.Load.
+        // This guarantees the UI matches what a fresh install would get.
+        var tmp = Path.Combine(Path.GetTempPath(), $"joycon-defaults-{Guid.NewGuid():N}.ini");
+        try
+        {
+            File.WriteAllText(tmp, "");
+            var defaults = AppConfig.Load(tmp);
+            LoadFrom(defaults);
+        }
+        finally
+        {
+            try { File.Delete(tmp); } catch { }
+        }
+    }
+
     private void LoadFrom(AppConfig cfg)
     {
         _side.SelectedItem = cfg.Side.ToString().ToLowerInvariant();
+        RepopulatePedalButtonDropdowns();
         _vjoyId.Value = cfg.VJoyDeviceId;
 
         switch (cfg.Axis)
@@ -291,9 +385,24 @@ internal sealed class SettingsForm : Form
         _autoRecenterEnabled.Checked = cfg.AutoRecenterIdleSeconds > 0;
         _autoRecenter.Enabled = _autoRecenterEnabled.Checked;
         _autoRecenter.Value = cfg.AutoRecenterIdleSeconds > 0 ? (decimal)cfg.AutoRecenterIdleSeconds : 1.5m;
+
+        SetComboIfPresent(_pedalThrottleBtn, cfg.PedalThrottleButton);
+        SetComboIfPresent(_pedalBrakeBtn,    cfg.PedalBrakeButton);
+        SetComboIfPresent(_pedalRecenter,    cfg.PedalRecenterButton);
+        _pedalTiltAxis.SelectedItem = cfg.PedalTiltAxis.ToString().ToLowerInvariant();
+        _pedalTiltRange.Value    = (decimal)Math.Clamp(cfg.PedalTiltRangeDegrees, 5, 90);
+        _pedalTiltDeadzone.Value = (decimal)Math.Clamp(cfg.PedalTiltDeadzoneDegrees, 0, 30);
+        _pedalTiltInvert.Checked = cfg.PedalTiltInvert;
+
         _beta.Value = (decimal)cfg.MadgwickBeta;
         foreach (var name in ButtonNames)
             _buttonInputs[name].Value = cfg.ButtonMap.TryGetValue(name, out var v) ? v : 0;
+    }
+
+    private static void SetComboIfPresent(ComboBox combo, string value)
+    {
+        if (combo.Items.Contains(value)) combo.SelectedItem = value;
+        else if (combo.Items.Count > 0) combo.SelectedIndex = 0;
     }
 
     private string ResolveSelectedAxis()
@@ -328,6 +437,14 @@ internal sealed class SettingsForm : Form
             };
             foreach (var name in ButtonNames)
                 updates[("buttons", name)] = ((int)_buttonInputs[name].Value).ToString(CultureInfo.InvariantCulture);
+
+            updates[("pedal_buttons", "throttle")] = _pedalThrottleBtn.SelectedItem?.ToString() ?? "zr";
+            updates[("pedal_buttons", "brake")]    = _pedalBrakeBtn.SelectedItem?.ToString() ?? "r";
+            updates[("pedal_tilt", "axis")]             = _pedalTiltAxis.SelectedItem?.ToString() ?? "auto";
+            updates[("pedal_tilt", "range_degrees")]    = _pedalTiltRange.Value.ToString(CultureInfo.InvariantCulture);
+            updates[("pedal_tilt", "deadzone_degrees")] = _pedalTiltDeadzone.Value.ToString(CultureInfo.InvariantCulture);
+            updates[("pedal_tilt", "invert")]           = _pedalTiltInvert.Checked ? "true" : "false";
+            updates[("pedal_tilt", "recenter_button")]  = _pedalRecenter.SelectedItem?.ToString() ?? "home";
 
             IniWriter.Update(_iniPath, updates);
             Saved?.Invoke();

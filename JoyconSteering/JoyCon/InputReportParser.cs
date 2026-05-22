@@ -27,6 +27,25 @@ internal static class InputReportParser
     /// <summary>Battery level 0-8 from byte 2 upper nibble.</summary>
     public static int ParseBattery(ReadOnlySpan<byte> buffer) => (buffer[2] >> 4) & 0x0F;
 
+    public static RightJoyConButton ParseRightButtons(ReadOnlySpan<byte> buffer)
+    {
+        byte shared = buffer[4];
+        byte rightSide = buffer[3];
+        RightJoyConButton b = RightJoyConButton.None;
+        if ((rightSide & 0x01) != 0) b |= RightJoyConButton.Y;
+        if ((rightSide & 0x02) != 0) b |= RightJoyConButton.X;
+        if ((rightSide & 0x04) != 0) b |= RightJoyConButton.B;
+        if ((rightSide & 0x08) != 0) b |= RightJoyConButton.A;
+        if ((rightSide & 0x10) != 0) b |= RightJoyConButton.SrR;
+        if ((rightSide & 0x20) != 0) b |= RightJoyConButton.SlR;
+        if ((rightSide & 0x40) != 0) b |= RightJoyConButton.R;
+        if ((rightSide & 0x80) != 0) b |= RightJoyConButton.Zr;
+        if ((shared & 0x02) != 0) b |= RightJoyConButton.Plus;
+        if ((shared & 0x04) != 0) b |= RightJoyConButton.Stick;
+        if ((shared & 0x10) != 0) b |= RightJoyConButton.Home;
+        return b;
+    }
+
     public static LeftJoyConButton ParseLeftButtons(ReadOnlySpan<byte> buffer)
     {
         byte shared = buffer[4];
@@ -69,6 +88,24 @@ internal static class InputReportParser
         return new ImuSample(
             ax * AccelToG, ay * AccelToG, az * AccelToG,
             gx * GyroToDps, gy * GyroToDps, gz * GyroToDps);
+    }
+
+    public static RightJoyConState ParseRightStandard(ReadOnlySpan<byte> buffer)
+    {
+        if (buffer.Length < ReportSize)
+            throw new ArgumentException($"Buffer too short: {buffer.Length} < {ReportSize}", nameof(buffer));
+        if (buffer[0] != StandardReportId)
+            throw new ArgumentException($"Not a 0x30 report (got 0x{buffer[0]:X2})", nameof(buffer));
+
+        var (sx, sy) = ParseStick(buffer, isLeft: false);
+        return new RightJoyConState(
+            ParseRightButtons(buffer),
+            sx, sy,
+            ParseBattery(buffer),
+            buffer[1],
+            ParseImu(buffer, 0),
+            ParseImu(buffer, 1),
+            ParseImu(buffer, 2));
     }
 
     public static JoyConState ParseStandard(ReadOnlySpan<byte> buffer, bool isLeft)

@@ -15,6 +15,8 @@ internal sealed class DiagnosticsForm : Form
     private readonly Label _batteryLabel;
     private readonly Label _errorLabel;
     private readonly ProgressBar _steerBar;
+    private readonly Label _pedalStatusLabel;
+    private readonly Label _pedalValuesLabel;
     private readonly SteeringWorker _worker;
     private readonly System.Windows.Forms.Timer _timer;
     private bool _confirmedQuit;
@@ -36,7 +38,7 @@ internal sealed class DiagnosticsForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 2,
-            RowCount = 8,
+            RowCount = 10,
             Padding = new Padding(12),
         };
         grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
@@ -61,7 +63,9 @@ internal sealed class DiagnosticsForm : Form
 
         _stickYLabel = AddRow(grid, 4, "Stick Y:");
         _batteryLabel = AddRow(grid, 5, "Battery:");
-        _errorLabel = AddRow(grid, 6, "Error:");
+        _pedalStatusLabel = AddRow(grid, 6, "Pedal JoyCon:");
+        _pedalValuesLabel = AddRow(grid, 7, "  Throttle/Brake:");
+        _errorLabel = AddRow(grid, 8, "Error:");
         _errorLabel.ForeColor = Color.Firebrick;
 
         var buttons = new FlowLayoutPanel
@@ -76,7 +80,7 @@ internal sealed class DiagnosticsForm : Form
         settings.Click += (s, e) => SettingsRequested?.Invoke();
         buttons.Controls.Add(recenter);
         buttons.Controls.Add(settings);
-        grid.Controls.Add(buttons, 1, 7);
+        grid.Controls.Add(buttons, 1, 9);
 
         Controls.Add(grid);
 
@@ -109,6 +113,22 @@ internal sealed class DiagnosticsForm : Form
         _steerBar.Value = (int)Math.Round((Math.Clamp(s.Steer, -1, 1) + 1) * 500);
         _stickYLabel.Text = $"{s.StickY,+5:F2}";
         _batteryLabel.Text = $"{s.BatteryPercent}%{(s.Charging ? " (charging)" : "")}";
+
+        var p = _worker.Pedals.Status;
+        if (!p.Running) {
+            _pedalStatusLabel.Text = "not in use";
+            _pedalStatusLabel.ForeColor = Color.DimGray;
+            _pedalValuesLabel.Text = "—";
+        } else if (p.ErrorMessage is not null || !p.Connected) {
+            _pedalStatusLabel.Text = "waiting…";
+            _pedalStatusLabel.ForeColor = Color.DarkOrange;
+            _pedalValuesLabel.Text = p.ErrorMessage ?? "disconnected";
+        } else {
+            _pedalStatusLabel.Text = $"Connected  bat {p.BatteryPercent}%";
+            _pedalStatusLabel.ForeColor = Color.ForestGreen;
+            _pedalValuesLabel.Text = $"T={p.Throttle:F2}  B={p.Brake:F2}  tilt={p.TiltAngleDeg:+0.0;-0.0;0.0}°";
+        }
+
         _errorLabel.Text = s.ErrorMessage ?? "";
     }
 

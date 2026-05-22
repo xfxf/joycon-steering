@@ -125,6 +125,39 @@ public class WheelOutputMapperTests
     }
 
     [Fact]
+    public void ExternalPedals_OverrideStickComputation_InPedalMode()
+    {
+        var cfg = CfgWithButtons(ThrottleBrakeMode.PedalButtons);
+        var fake = new FakeWheelOutput();
+        // Stick is pushed, but mode is pedal_buttons → external pedals must win.
+        new WheelOutputMapper(cfg).Apply(0, State(stickY: 0.9), fake, externalPedals: (0.42, 0.0));
+        Assert.Equal(0.42, fake.Throttle, 3);
+        Assert.Equal(0.0,  fake.Brake);
+    }
+
+    [Fact]
+    public void ExternalPedals_Ignored_InStickMode()
+    {
+        var cfg = CfgWithButtons(ThrottleBrakeMode.Stick);
+        var fake = new FakeWheelOutput();
+        new WheelOutputMapper(cfg).Apply(0, State(stickY: 0.575), fake, externalPedals: (0.9, 0.1));
+        // Mode is stick, external is ignored — pedals computed from stick Y.
+        Assert.Equal(0.5, fake.Throttle, 3);
+        Assert.Equal(0.0, fake.Brake);
+    }
+
+    [Fact]
+    public void ExternalPedals_NullInPedalMode_Defaults_To_Zero()
+    {
+        var cfg = CfgWithButtons(ThrottleBrakeMode.PedalTilt);
+        var fake = new FakeWheelOutput();
+        new WheelOutputMapper(cfg).Apply(0, State(stickY: 0.9), fake, externalPedals: null);
+        // Pedal joycon not connected yet → no override → safe zero.
+        Assert.Equal(0.0, fake.Throttle);
+        Assert.Equal(0.0, fake.Brake);
+    }
+
+    [Fact]
     public void ZeroButtonMapping_IsIgnored()
     {
         var fake = new FakeWheelOutput();

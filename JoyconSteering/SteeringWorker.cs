@@ -35,6 +35,9 @@ public sealed class SteeringWorker : IDisposable
     private WorkerStatus _status = WorkerStatus.Stopped;
     private bool _recenterRequested;
     private bool _recalibrateRequested;
+    private readonly PedalJoyConWorker _pedals = new();
+
+    public PedalJoyConWorker Pedals => _pedals;
 
     public WorkerStatus Status
     {
@@ -50,10 +53,18 @@ public sealed class SteeringWorker : IDisposable
             _status = WorkerStatus.Stopped with { Running = true };
             _task = Task.Run(() => Run(config, _cts.Token), _cts.Token);
         }
+        // Spawn the pedal worker too if the configured mode needs it. Independent thread;
+        // safe if no second Joy-Con is paired — it'll just sit in its reconnect loop.
+        if (PedalsConfigHelper.RequiresPedalJoyCon(config.ThrottleBrake))
+            _pedals.Start(config);
+        else
+            _pedals.Stop();
     }
 
     public void Stop()
     {
+        _pedals.Stop();
+
         CancellationTokenSource? cts;
         Task? task;
         lock (_gate)
@@ -339,7 +350,12 @@ public sealed class SteeringWorker : IDisposable
             lastMs = now;
 
             double steer = steering.Compute(angle, dtMs);
-            mapper.Apply(steer, state, vjoy);
+
+            // If pedals come from the other Joy-Con, pull the latest from its worker.
+            (double, double)? externalPedals = null;
+            if (PedalsConfigHelper.RequiresPedalJoyCon(config.ThrottleBrake))
+                externalPedals = _pedals.CurrentPedals;
+            mapper.Apply(steer, state, vjoy, externalPedals);
 
             int batPct = JoyConBattery.Percent(state.Battery);
             bool charging = JoyConBattery.IsCharging(state.Battery);

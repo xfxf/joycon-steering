@@ -13,11 +13,23 @@ public sealed class WheelOutputMapper
 
     public WheelOutputMapper(AppConfig config) => _config = config;
 
-    public void Apply(double steering, JoyConState joycon, IWheelOutput sink)
+    public void Apply(double steering, JoyConState joycon, IWheelOutput sink,
+        (double Throttle, double Brake)? externalPedals = null)
     {
         sink.SetSteering(Math.Clamp(steering, -1.0, 1.0));
 
-        var (throttle, brake) = ComputeThrottleBrake(joycon);
+        double throttle, brake;
+        if (PedalsConfigHelper.RequiresPedalJoyCon(_config.ThrottleBrake))
+        {
+            // Pedal joycon is the source; if it hasn't reported yet, safe zero.
+            (throttle, brake) = externalPedals ?? (0, 0);
+            throttle = Math.Clamp(throttle, 0.0, 1.0);
+            brake    = Math.Clamp(brake,    0.0, 1.0);
+        }
+        else
+        {
+            (throttle, brake) = ComputeThrottleBrake(joycon);
+        }
         sink.SetThrottle(throttle);
         sink.SetBrake(brake);
 
