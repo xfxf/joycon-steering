@@ -62,45 +62,47 @@ public class GravityTiltAxisTests
     }
 
     [Fact]
-    public void Unwrap_RotationPast180_DoesNotFlip()
+    public void Past180_WrapsToNegative()
     {
-        // Rotate slowly through +200° via several intermediate samples. The angle
-        // should grow monotonically and end ~+200°, NOT flip to -160°.
+        // Tilt mode is bounded to (-180°, +180°] by design — past that, it wraps.
+        // For unbounded tracking, use the gyro-integrated WheelAxisIntegrator.
         var t = new GravityTiltAxis();
-        t.Update(0, 1); // neutral at 0°
-        for (int deg = 10; deg <= 200; deg += 10)
-        {
-            var (x, y) = GravityAt(deg);
-            t.Update(x, y);
-        }
-        Assert.InRange(t.AngleDegrees, 195, 205);
+        t.Update(0, 1);
+        var (x, y) = GravityAt(200);
+        t.Update(x, y);
+        // 200° physical = -160° relative (shortest path).
+        Assert.InRange(t.AngleDegrees, -165, -155);
     }
 
     [Fact]
-    public void Unwrap_RotationPast_Minus180_DoesNotFlip()
+    public void DoesNotDrift_OverManyTicks_WhenInputIsStable()
     {
+        // A stable gravity reading should produce the SAME angle every tick, with
+        // no accumulator-style drift. This is the bug we fixed by removing the
+        // delta-accumulator — symptom was steering centre walking off during use.
         var t = new GravityTiltAxis();
-        t.Update(0, 1);
-        for (int deg = -10; deg >= -240; deg -= 10)
-        {
-            var (x, y) = GravityAt(deg);
-            t.Update(x, y);
-        }
-        Assert.InRange(t.AngleDegrees, -245, -235);
+        t.Update(0, 1); // neutral
+        var (x, y) = GravityAt(20); // tilted +20°
+        for (int i = 0; i < 10_000; i++) t.Update(x, y);
+        Assert.Equal(20.0, t.AngleDegrees, 3);
     }
 
     [Fact]
-    public void Unwrap_FullRevolution_AccumulatesTo360()
+    public void DoesNotDrift_AfterMotionSettles()
     {
+        // Move from 0° → 30° via many intermediate samples (simulating Madgwick's
+        // slow gravity estimate settling), then HOLD at 30° for thousands of ticks.
+        // The final reading must be exactly 30°, regardless of how the angle got
+        // there.
         var t = new GravityTiltAxis();
         t.Update(0, 1);
-        for (int deg = 5; deg <= 360; deg += 5)
-        {
+        for (int deg = 1; deg <= 30; deg++) {
             var (x, y) = GravityAt(deg);
             t.Update(x, y);
         }
-        // After one full revolution, accumulated angle is +360° (or close to it).
-        Assert.InRange(t.AngleDegrees, 355, 365);
+        var (xh, yh) = GravityAt(30);
+        for (int i = 0; i < 10_000; i++) t.Update(xh, yh);
+        Assert.Equal(30.0, t.AngleDegrees, 3);
     }
 
     [Fact]

@@ -10,20 +10,18 @@ namespace JoyconSteering.JoyCon.Fusion;
 /// (body Z) is the wheel rotation axis; body X and Y spin in the vertical plane as
 /// the wheel turns. The projection of gravity onto body XY rotates with the wheel.
 ///
-/// **Drift-free** because gravity is always there. **Unwrapped** — past ±180° doesn't
-/// flip; the accumulated angle grows without bound and SteeringMath clamps cleanly.
+/// **Drift-free** — the angle is computed fresh from the current gravity vector each
+/// tick (no integration, no accumulator). Trade-off: bounded to ±180° relative to
+/// the neutral position; past that it wraps. If you need unbounded tracking, use the
+/// gyro-integrated <see cref="WheelAxisIntegrator"/> ("Wheel" axis) instead.
 /// </summary>
 public sealed class GravityTiltAxis
 {
-    private double _neutralAccumRad;
+    private double _neutralRad;
     private bool _hasNeutral;
-
-    // Continuous (unwrapped) accumulated angle since reset, in radians.
-    private double _accumRad;
     private double _lastRawRad;
-    private bool _hasLastRaw;
 
-    /// <summary>Wheel angle in degrees, relative to last recenter. UNBOUNDED.</summary>
+    /// <summary>Wheel angle in degrees, relative to last recenter (-180..+180].</summary>
     public double AngleDegrees { get; private set; }
 
     /// <summary>
@@ -33,37 +31,25 @@ public sealed class GravityTiltAxis
     public void Update(double gravityX, double gravityY)
     {
         double rawRad = Math.Atan2(gravityX, gravityY);
-
-        if (!_hasLastRaw)
-        {
-            _lastRawRad = rawRad;
-            _accumRad = rawRad;
-            _hasLastRaw = true;
-        }
-        else
-        {
-            // Unwrap: if the raw atan2 jumped by more than π, it crossed the ±π
-            // discontinuity. Add the inverse to keep _accumRad continuous.
-            double delta = rawRad - _lastRawRad;
-            if (delta > Math.PI) delta -= 2 * Math.PI;
-            else if (delta < -Math.PI) delta += 2 * Math.PI;
-            _accumRad += delta;
-            _lastRawRad = rawRad;
-        }
+        _lastRawRad = rawRad;
 
         if (!_hasNeutral)
         {
-            _neutralAccumRad = _accumRad;
+            _neutralRad = rawRad;
             _hasNeutral = true;
         }
 
-        AngleDegrees = (_accumRad - _neutralAccumRad) * 180.0 / Math.PI;
+        // Shortest-path delta from neutral, wrapped to (-π, +π].
+        double relative = rawRad - _neutralRad;
+        while (relative > Math.PI) relative -= 2 * Math.PI;
+        while (relative < -Math.PI) relative += 2 * Math.PI;
+        AngleDegrees = relative * 180.0 / Math.PI;
     }
 
-    /// <summary>Capture the current accumulated angle as the new zero.</summary>
+    /// <summary>Capture the current sample's gravity direction as the new zero.</summary>
     public void SetNeutral()
     {
-        _neutralAccumRad = _accumRad;
+        _neutralRad = _lastRawRad;
         _hasNeutral = true;
         AngleDegrees = 0;
     }
@@ -71,9 +57,8 @@ public sealed class GravityTiltAxis
     public void Reset()
     {
         _hasNeutral = false;
-        _hasLastRaw = false;
-        _accumRad = 0;
-        _neutralAccumRad = 0;
+        _lastRawRad = 0;
+        _neutralRad = 0;
         AngleDegrees = 0;
     }
 }
